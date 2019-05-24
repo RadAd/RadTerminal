@@ -412,15 +412,15 @@ void RadTerminalWindowOnKeyDown(HWND hWnd, UINT vk, BOOL fDown, int cRepeat, UIN
     uint32_t unicode = ascii;
 
     unsigned int mods = 0;
-    if (KeyState[VK_SHIFT] != 0)
+    if (KeyState[VK_SHIFT] & 0x8)
         mods |= TSM_SHIFT_MASK;
-    if (KeyState[VK_SCROLL] != 0)
+    if (KeyState[VK_SCROLL] & 0x8)
         mods |= TSM_LOCK_MASK;
-    if (KeyState[VK_CONTROL] != 0)
+    if (KeyState[VK_CONTROL] & 0x8)
         mods |= TSM_CONTROL_MASK;
-    if (KeyState[VK_MENU] != 0)
+    if (KeyState[VK_MENU] & 0x8)
         mods |= TSM_ALT_MASK;
-    if (KeyState[VK_LWIN] != 0)
+    if (KeyState[VK_LWIN] & 0x8)
         mods |= TSM_LOGO_MASK;
 
     UINT scan = (cRepeat >> 8);
