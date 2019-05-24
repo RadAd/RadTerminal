@@ -686,8 +686,40 @@ void RadTerminalWindowOnRButtonDown(HWND hWnd, BOOL fDoubleClick, int x, int y, 
     int len = tsm_screen_selection_copy(data->screen, &buf);
     if (len > 0)
     {
-        HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, len);
-        memcpy(GlobalLock(hMem), buf, len);
+        {   // trim empty space from end of lines
+            char* lastnonnull = nullptr;
+            for (int i = 0; i < len; ++i)
+            {
+                switch (buf[i])
+                {
+                case ' ':
+                case '\0':
+                    //buf[i] = ' ';
+                    break;
+
+                case '\n':
+                    if (lastnonnull != nullptr)
+                    {
+                        strncpy_s(lastnonnull, len - (lastnonnull - buf), buf + i, len - i);  // TODO len should be len - (lastnonnull - buf) I think
+                        int cut = (int) ((buf + i) - lastnonnull);
+                        len -= cut;
+                        i -= cut;
+                    }
+                    // fallthrough
+
+                default:
+                    lastnonnull = buf + i + 1;
+                    break;
+                }
+            }
+
+            *lastnonnull = '\0';
+            int cut = (int) ((buf + len) - lastnonnull);
+            len -= cut;
+        }
+
+        HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, len + 1);
+        memcpy(GlobalLock(hMem), buf, len + 1);
         GlobalUnlock(hMem);
         while (!OpenClipboard(hWnd))
             ;
