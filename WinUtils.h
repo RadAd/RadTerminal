@@ -28,9 +28,9 @@ inline RECT Rect(POINT p1, SIZE s2)
     return { p1.x, p1.y, p1.x + s2.cx, p1.y + s2.cy };
 }
 
-inline HFONT CreateFont(LPTSTR pFontFace, int iFontHeight, int cWeight)
+inline HFONT CreateFont(LPTSTR pFontFace, int iFontHeight, int cWeight, BOOL bItalic, BOOL bUnderline)
 {
-    return CreateFont(iFontHeight, 0, 0, 0, cWeight, FALSE, FALSE, FALSE, ANSI_CHARSET,
+    return CreateFont(iFontHeight, 0, 0, 0, cWeight, bItalic, bUnderline, FALSE, ANSI_CHARSET,
         OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
         DEFAULT_PITCH | FF_DONTCARE, pFontFace);
 }

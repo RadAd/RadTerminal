@@ -148,9 +148,16 @@ void tsm_log(void *data,
 
 struct tsm_screen_draw_info
 {
-    HFONT hFontNormal;
-    HFONT hFontBold;
+    HFONT hFonts[2][2][2]; // bold, italic, underline
     TEXTMETRIC tm;
+};
+
+struct tsm_screen_draw_state
+{
+    POINT p;
+    HFONT hFont;
+    COLORREF bg;
+    COLORREF fg;
 };
 
 struct tsm_screen_draw_data
@@ -158,11 +165,8 @@ struct tsm_screen_draw_data
     HDC hdc;
     const tsm_screen_draw_info* info;
 
-    POINT p;
-    HFONT hFont;
     std::tstring drawbuf;
-    COLORREF bg;
-    COLORREF fg;
+    tsm_screen_draw_state state;
 };
 
 SIZE GetCellSize(const tsm_screen_draw_info* di)
@@ -180,10 +184,10 @@ void Flush(tsm_screen_draw_data* const draw)
 {
     if (!draw->drawbuf.empty())
     {
-        HFONT hFontOrig = SelectFont(draw->hdc, draw->hFont);
-        SetBkColor(draw->hdc, draw->bg);
-        SetTextColor(draw->hdc, draw->fg);
-        TextOut(draw->hdc, draw->p.x, draw->p.y, draw->drawbuf.c_str(), (int) draw->drawbuf.length());
+        HFONT hFontOrig = SelectFont(draw->hdc, draw->state.hFont);
+        SetBkColor(draw->hdc, draw->state.bg);
+        SetTextColor(draw->hdc, draw->state.fg);
+        TextOut(draw->hdc, draw->state.p.x, draw->state.p.y, draw->drawbuf.c_str(), (int) draw->drawbuf.length());
         draw->drawbuf.clear();
         SelectFont(draw->hdc, hFontOrig);
     }
@@ -201,19 +205,17 @@ int tsm_screen_draw(struct tsm_screen *con,
     void *data)
 {
     tsm_screen_draw_data* const draw = (tsm_screen_draw_data*) data;
-    // TODO Underline, Inverse, Protect, Blink
-    const COORD pos = { (SHORT) posx, (SHORT) posy };
-    const POINT p = GetScreenPos(draw->info, pos);
-    const HFONT hFont = attr->bold ? draw->info->hFontBold : draw->info->hFontNormal;
-    const COLORREF bg = RGB(attr->br, attr->bg, attr->bb);
-    const COLORREF fg = RGB(attr->fr, attr->fg, attr->fb);
-    if (hFont != draw->hFont || bg != draw->bg || fg != draw->fg || p.y != draw->p.y)
+    // TODO Inverse, Protect, Blink
+    COORD pos = { (SHORT) posx, (SHORT) posy };
+    tsm_screen_draw_state state = {};
+    state.p = GetScreenPos(draw->info, pos);
+    state.hFont = draw->info->hFonts[attr->bold][attr->italic][attr->underline];
+    state.bg = RGB(attr->br, attr->bg, attr->bb);
+    state.fg = RGB(attr->fr, attr->fg, attr->fb);
+    if (memcmp(&state, &draw->state, sizeof(tsm_screen_draw_state)) != 0)
     {
         Flush(draw);
-        draw->hFont = hFont;
-        draw->bg = bg;
-        draw->fg = fg;
-        draw->p = p;
+        draw->state = state;
     }
     if (len > 0)
     {
@@ -332,11 +334,13 @@ BOOL RadTerminalWindowOnCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct)
         e = tsm_vte_set_palette(data->vte, scheme);
     }
 
-    CHECK(data->draw_info.hFontNormal = CreateFont(rtc->strFontFace, rtc->iFontHeight, FW_NORMAL), FALSE);
-    CHECK(data->draw_info.hFontBold = CreateFont(rtc->strFontFace, rtc->iFontHeight, FW_BOLD), FALSE);
+    for (int b = 0; b < 2; ++b)
+        for (int i = 0; i < 2; ++i)
+            for (int u = 0; u < 2; ++u)
+                CHECK(data->draw_info.hFonts[b][i][u] = CreateFont(rtc->strFontFace, rtc->iFontHeight, b == 0 ? FW_NORMAL : FW_BOLD, i, u), FALSE);
 
     HDC hdc = GetDC(hWnd);
-    SelectFont(hdc, data->draw_info.hFontNormal);
+    SelectFont(hdc, data->draw_info.hFonts[0][0][0]);
     GetTextMetrics(hdc, &data->draw_info.tm);
     ReleaseDC(hWnd, hdc);
 
@@ -365,8 +369,10 @@ void RadTerminalWindowOnDestroy(HWND hWnd)
 
     CleanupSubProcess(&data->spd);
 
-    DeleteFont(data->draw_info.hFontNormal);
-    DeleteFont(data->draw_info.hFontBold);
+    for (int b = 0; b < 2; ++b)
+        for (int i = 0; i < 2; ++i)
+            for (int u = 0; u < 2; ++u)
+                DeleteFont(data->draw_info.hFonts[b][i][u]);
 
     tsm_vte_unref(data->vte);
     tsm_screen_unref(data->screen);
@@ -389,7 +395,7 @@ void RadTerminalWindowOnPaint(HWND hWnd)
     tsm_screen_draw_data draw = {};
     draw.hdc = hdc;
     draw.info = &data->draw_info;
-    draw.p.y = -1;
+    draw.state.p.y = -1;
     tsm_age_t age = tsm_screen_draw(data->screen, tsm_screen_draw, (void*) &draw);
     Flush(&draw);
 
