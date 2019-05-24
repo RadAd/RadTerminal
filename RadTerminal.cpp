@@ -353,6 +353,75 @@ void DrawCursor(HDC hdc, const RadTerminalData* const data)
     }
 }
 
+int ActionCopyToClipboard(HWND hWnd)
+{
+    const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
+    char* buf = nullptr;
+    int len = tsm_screen_selection_copy(data->screen, &buf);
+    if (len > 0)
+    {
+        {   // trim empty space from end of lines
+            char* lastnonnull = nullptr;
+            for (int i = 0; i < len; ++i)
+            {
+                switch (buf[i])
+                {
+                case ' ':
+                case '\0':
+                    //buf[i] = ' ';
+                    break;
+
+                case '\n':
+                    if (lastnonnull != nullptr)
+                    {
+                        strncpy_s(lastnonnull, len - (lastnonnull - buf), buf + i, len - i);  // TODO len should be len - (lastnonnull - buf) I think
+                        int cut = (int) ((buf + i) - lastnonnull);
+                        len -= cut;
+                        i -= cut;
+                    }
+                    // fallthrough
+
+                default:
+                    lastnonnull = buf + i + 1;
+                    break;
+                }
+            }
+
+            *lastnonnull = '\0';
+            int cut = (int) ((buf + len) - lastnonnull);
+            len -= cut;
+        }
+
+        HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, len + 1);
+        memcpy(GlobalLock(hMem), buf, len + 1);
+        GlobalUnlock(hMem);
+        while (!OpenClipboard(hWnd))
+            ;
+        CHECK_ONLY(EmptyClipboard());
+        CHECK_ONLY(SetClipboardData(CF_TEXT, hMem));
+        CHECK_ONLY(CloseClipboard());
+
+        tsm_screen_selection_reset(data->screen);
+        InvalidateRect(hWnd, nullptr, TRUE);
+    }
+    free(buf);
+    return len;
+}
+
+int ActionClearSelection(HWND hWnd)
+{
+    const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
+    char* buf = nullptr;
+    int len = tsm_screen_selection_copy(data->screen, &buf);
+    if (len > 0)
+    {
+        tsm_screen_selection_reset(data->screen);
+        InvalidateRect(hWnd, nullptr, TRUE);
+    }
+    free(buf);
+    return len;
+}
+
 BOOL RadTerminalWindowOnCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct)
 {
     const RadTerminalCreate* const rtc = (RadTerminalCreate*) lpCreateStruct->lpCreateParams;
@@ -462,180 +531,190 @@ void RadTerminalWindowOnKeyDown(HWND hWnd, UINT vk, BOOL fDown, int cRepeat, UIN
     BYTE KeyState[256];
     GetKeyboardState(KeyState);
 
-    uint32_t keysym = XKB_KEY_NoSymbol;
-    uint32_t ascii = 0;
-    uint32_t unicode = ascii;
-
-    unsigned int mods = 0;
-    if (KeyState[VK_SHIFT] & 0x8)
-        mods |= TSM_SHIFT_MASK;
-    if (KeyState[VK_SCROLL] & 0x8)
-        mods |= TSM_LOCK_MASK;
-    if (KeyState[VK_CONTROL] & 0x8)
-        mods |= TSM_CONTROL_MASK;
-    if (KeyState[VK_MENU] & 0x8)
-        mods |= TSM_ALT_MASK;
-    if (KeyState[VK_LWIN] & 0x8)
-        mods |= TSM_LOGO_MASK;
-
-    UINT scan = (cRepeat >> 8);
-    WORD charsAscii[2] = {};
-    if (ToAscii(vk, scan, KeyState, charsAscii, 0) > 0)
-    {
-        ascii = charsAscii[0];
-        keysym = ascii;
-    }
-    WCHAR charsUnicode[4] = {};
-    if (ToUnicode(vk, scan, KeyState, charsUnicode, ARRAYSIZE(charsUnicode), 0) > 0)
-    {
-        unicode = charsUnicode[0];
-        keysym = ascii;
-    }
-
+    bool bPassOn = true;
     switch (vk)
     {
-    case VK_BACK: keysym = XKB_KEY_BackSpace; break;
-    case VK_TAB: keysym = XKB_KEY_Tab; break;
-        //case VK_: keysym = XKB_KEY_Linefeed; break;
-    case VK_CLEAR: keysym = XKB_KEY_Clear; break;
-    case VK_RETURN: keysym = XKB_KEY_Return; break;
-    case VK_PAUSE: keysym = XKB_KEY_Pause; break;
-    case VK_SCROLL: keysym = XKB_KEY_Scroll_Lock; break;
-        //case VK_: keysym = XKB_KEY_Sys_Req; break;
-    case VK_ESCAPE: keysym = XKB_KEY_Escape; break;
-    case VK_DELETE: keysym = XKB_KEY_Delete; break;
-
-    case VK_HOME: keysym = XKB_KEY_Home; break;
-    case VK_LEFT: keysym = XKB_KEY_Left; break;
-    case VK_UP: keysym = XKB_KEY_Up; break;
-    case VK_RIGHT: keysym = XKB_KEY_Right; break;
-    case VK_DOWN: keysym = XKB_KEY_Down; break;
-        //case VK_PRIOR: keysym = XKB_KEY_Prior; break;
-    case VK_PRIOR: keysym = XKB_KEY_Page_Up; break;
-        //case VK_NEXT: keysym = XKB_KEY_Next; break;
-    case VK_NEXT: keysym = XKB_KEY_Page_Down; break;
-    case VK_END: keysym = XKB_KEY_End; break;
-        //case VK_: keysym = XKB_KEY_Begin; break;
-
-    case VK_SELECT: keysym = XKB_KEY_Select; break;
-    case VK_PRINT: keysym = XKB_KEY_Print; break;
-    case VK_EXECUTE: keysym = XKB_KEY_Execute; break;
-    case VK_INSERT: keysym = XKB_KEY_Insert; break;
-        //case VK_: keysym = XKB_KEY_Undo; break;
-        //case VK_: keysym = XKB_KEY_Redo; break;
-        //case VK_: keysym = XKB_KEY_Menu; break;
-        //case VK_: keysym = XKB_KEY_Find; break;
-    case VK_CANCEL: keysym = XKB_KEY_Cancel; break;
-    case VK_HELP: keysym = XKB_KEY_Help; break;
-        //case VK_: keysym = XKB_KEY_Break; break;
-        //case VK_: keysym = XKB_KEY_Mode_switch; break;
-        //case VK_: keysym = XKB_KEY_script_switch; break;
-    case VK_NUMLOCK: keysym = XKB_KEY_Num_Lock; break;
-
-        //case VK_: keysym = XKB_KEY_KP_Space; break;
-        //case VK_: keysym = XKB_KEY_KP_Tab; break;
-        //case VK_: keysym = XKB_KEY_KP_Enter; break;
-        //case VK_: keysym = XKB_KEY_KP_F1; break;
-        //case VK_: keysym = XKB_KEY_KP_F2; break;
-        //case VK_: keysym = XKB_KEY_KP_F3; break;
-        //case VK_: keysym = XKB_KEY_KP_F4; break;
-        //case VK_: keysym = XKB_KEY_KP_Home; break;
-        //case VK_: keysym = XKB_KEY_KP_Left; break;
-        //case VK_: keysym = XKB_KEY_KP_Up; break;
-        //case VK_: keysym = XKB_KEY_KP_Right; break;
-        //case VK_: keysym = XKB_KEY_KP_Down; break;
-        //case VK_: keysym = XKB_KEY_KP_Prior; break;
-        //case VK_: keysym = XKB_KEY_KP_Page_Up; break;
-        //case VK_: keysym = XKB_KEY_KP_Next; break;
-        //case VK_: keysym = XKB_KEY_KP_Page_Down; break;
-        //case VK_: keysym = XKB_KEY_KP_End                        0xff9c
-        //case VK_: keysym = XKB_KEY_KP_Begin                      0xff9d
-        //case VK_: keysym = XKB_KEY_KP_Insert                     0xff9e
-        //case VK_: keysym = XKB_KEY_KP_Delete                     0xff9f
-        //case VK_: keysym = XKB_KEY_KP_Equal                      0xffbd  /* Equals */
-        //case VK_: keysym = XKB_KEY_KP_Multiply                   0xffaa
-        //case VK_: keysym = XKB_KEY_KP_Add                        0xffab
-        //case VK_: keysym = XKB_KEY_KP_Separator                  0xffac  /* Separator, often comma */
-        //case VK_: keysym = XKB_KEY_KP_Subtract                   0xffad
-        //case VK_: keysym = XKB_KEY_KP_Decimal                    0xffae
-        //case VK_: keysym = XKB_KEY_KP_Divide                     0xffaf
-
-    case VK_NUMPAD0: keysym = XKB_KEY_KP_0; break;
-    case VK_NUMPAD1: keysym = XKB_KEY_KP_1; break;
-    case VK_NUMPAD2: keysym = XKB_KEY_KP_2; break;
-    case VK_NUMPAD3: keysym = XKB_KEY_KP_3; break;
-    case VK_NUMPAD4: keysym = XKB_KEY_KP_4; break;
-    case VK_NUMPAD5: keysym = XKB_KEY_KP_5; break;
-    case VK_NUMPAD6: keysym = XKB_KEY_KP_6; break;
-    case VK_NUMPAD7: keysym = XKB_KEY_KP_7; break;
-    case VK_NUMPAD8: keysym = XKB_KEY_KP_8; break;
-    case VK_NUMPAD9: keysym = XKB_KEY_KP_9; break;
-
-    case VK_F1: keysym = XKB_KEY_F1; break;
-    case VK_F2: keysym = XKB_KEY_F2; break;
-    case VK_F3: keysym = XKB_KEY_F3; break;
-    case VK_F4: keysym = XKB_KEY_F4; break;
-    case VK_F5: keysym = XKB_KEY_F5; break;
-    case VK_F6: keysym = XKB_KEY_F6; break;
-    case VK_F7: keysym = XKB_KEY_F7; break;
-    case VK_F8: keysym = XKB_KEY_F8; break;
-    case VK_F9: keysym = XKB_KEY_F9; break;
-    case VK_F10: keysym = XKB_KEY_F10; break;
-    case VK_F11: keysym = XKB_KEY_F11; break;
-        //case VK_: keysym = XKB_KEY_L1; break;
-    case VK_F12: keysym = XKB_KEY_F12; break;
-        //case VK_: keysym = XKB_KEY_L2; break;
-    case VK_F13: keysym = XKB_KEY_F13; break;
-        //case VK_: keysym = XKB_KEY_L3; break;
-    case VK_F14: keysym = XKB_KEY_F14; break;
-        //case VK_: keysym = XKB_KEY_L4; break;
-    case VK_F15: keysym = XKB_KEY_F15; break;
-        //case VK_: keysym = XKB_KEY_L5; break;
-    case VK_F16: keysym = XKB_KEY_F16; break;
-        //case VK_: keysym = XKB_KEY_L6; break;
-    case VK_F17: keysym = XKB_KEY_F17; break;
-        //case VK_: keysym = XKB_KEY_L7; break;
-    case VK_F18: keysym = XKB_KEY_F18; break;
-        //case VK_: keysym = XKB_KEY_L8; break;
-    case VK_F19: keysym = XKB_KEY_F19; break;
-        //case VK_: keysym = XKB_KEY_L9; break;
-    case VK_F20: keysym = XKB_KEY_F20; break;
-        //case VK_: keysym = XKB_KEY_L10; break;
-    case VK_F21: keysym = XKB_KEY_F21; break;
-        //case VK_: keysym = XKB_KEY_R1; break;
-    case VK_F22: keysym = XKB_KEY_F22; break;
-        //case VK_: keysym = XKB_KEY_R2; break;
-    case VK_F23: keysym = XKB_KEY_F23; break;
-        //case VK_: keysym = XKB_KEY_R3; break;
-    case VK_F24: keysym = XKB_KEY_F24; break;
-        //case VK_: keysym = XKB_KEY_R4; break;
-        //case VK_: keysym = XKB_KEY_F25; break;
-        //case VK_: keysym = XKB_KEY_R5; break;
-        //case VK_: keysym = XKB_KEY_F26; break;
-        //case VK_: keysym = XKB_KEY_R6; break;
-        //case VK_: keysym = XKB_KEY_F27; break;
-        //case VK_: keysym = XKB_KEY_R7; break;
-        //case VK_: keysym = XKB_KEY_F28; break;
-        //case VK_: keysym = XKB_KEY_R8; break;
-        //case VK_: keysym = XKB_KEY_F29; break;
-        //case VK_: keysym = XKB_KEY_R9; break;
-        //case VK_: keysym = XKB_KEY_F30; break;
-        //case VK_: keysym = XKB_KEY_R10; break;
-        //case VK_: keysym = XKB_KEY_F31; break;
-        //case VK_: keysym = XKB_KEY_R11; break;
-        //case VK_: keysym = XKB_KEY_F32; break;
-        //case VK_: keysym = XKB_KEY_R12; break;
-        //case VK_: keysym = XKB_KEY_F33; break;
-        //case VK_: keysym = XKB_KEY_R13; break;
-        //case VK_: keysym = XKB_KEY_F34; break;
-        //case VK_: keysym = XKB_KEY_R14; break;
-        //case VK_: keysym = XKB_KEY_F35; break;
-        //case VK_: keysym = XKB_KEY_R15; break;
+    case VK_ESCAPE: bPassOn = ActionClearSelection(hWnd) < 0; break;
+    case VK_RETURN: bPassOn = ActionCopyToClipboard(hWnd) < 0; break;
     }
 
-    tsm_screen_selection_reset(data->screen);
-    bool b = tsm_vte_handle_keyboard(data->vte, keysym, ascii, mods, unicode);
-    InvalidateRect(hWnd, nullptr, TRUE);
+    if (bPassOn)
+    {
+        uint32_t keysym = XKB_KEY_NoSymbol;
+        uint32_t ascii = 0;
+        uint32_t unicode = ascii;
+
+        unsigned int mods = 0;
+        if (KeyState[VK_SHIFT] & 0x8)
+            mods |= TSM_SHIFT_MASK;
+        if (KeyState[VK_SCROLL] & 0x8)
+            mods |= TSM_LOCK_MASK;
+        if (KeyState[VK_CONTROL] & 0x8)
+            mods |= TSM_CONTROL_MASK;
+        if (KeyState[VK_MENU] & 0x8)
+            mods |= TSM_ALT_MASK;
+        if (KeyState[VK_LWIN] & 0x8)
+            mods |= TSM_LOGO_MASK;
+
+        UINT scan = (cRepeat >> 8);
+        WORD charsAscii[2] = {};
+        if (ToAscii(vk, scan, KeyState, charsAscii, 0) > 0)
+        {
+            ascii = charsAscii[0];
+            keysym = ascii;
+        }
+        WCHAR charsUnicode[4] = {};
+        if (ToUnicode(vk, scan, KeyState, charsUnicode, ARRAYSIZE(charsUnicode), 0) > 0)
+        {
+            unicode = charsUnicode[0];
+            keysym = ascii;
+        }
+
+        switch (vk)
+        {
+        case VK_BACK: keysym = XKB_KEY_BackSpace; break;
+        case VK_TAB: keysym = XKB_KEY_Tab; break;
+            //case VK_: keysym = XKB_KEY_Linefeed; break;
+        case VK_CLEAR: keysym = XKB_KEY_Clear; break;
+        case VK_RETURN: keysym = XKB_KEY_Return; break;
+        case VK_PAUSE: keysym = XKB_KEY_Pause; break;
+        case VK_SCROLL: keysym = XKB_KEY_Scroll_Lock; break;
+            //case VK_: keysym = XKB_KEY_Sys_Req; break;
+        case VK_ESCAPE: keysym = XKB_KEY_Escape; break;
+        case VK_DELETE: keysym = XKB_KEY_Delete; break;
+
+        case VK_HOME: keysym = XKB_KEY_Home; break;
+        case VK_LEFT: keysym = XKB_KEY_Left; break;
+        case VK_UP: keysym = XKB_KEY_Up; break;
+        case VK_RIGHT: keysym = XKB_KEY_Right; break;
+        case VK_DOWN: keysym = XKB_KEY_Down; break;
+            //case VK_PRIOR: keysym = XKB_KEY_Prior; break;
+        case VK_PRIOR: keysym = XKB_KEY_Page_Up; break;
+            //case VK_NEXT: keysym = XKB_KEY_Next; break;
+        case VK_NEXT: keysym = XKB_KEY_Page_Down; break;
+        case VK_END: keysym = XKB_KEY_End; break;
+            //case VK_: keysym = XKB_KEY_Begin; break;
+
+        case VK_SELECT: keysym = XKB_KEY_Select; break;
+        case VK_PRINT: keysym = XKB_KEY_Print; break;
+        case VK_EXECUTE: keysym = XKB_KEY_Execute; break;
+        case VK_INSERT: keysym = XKB_KEY_Insert; break;
+            //case VK_: keysym = XKB_KEY_Undo; break;
+            //case VK_: keysym = XKB_KEY_Redo; break;
+            //case VK_: keysym = XKB_KEY_Menu; break;
+            //case VK_: keysym = XKB_KEY_Find; break;
+        case VK_CANCEL: keysym = XKB_KEY_Cancel; break;
+        case VK_HELP: keysym = XKB_KEY_Help; break;
+            //case VK_: keysym = XKB_KEY_Break; break;
+            //case VK_: keysym = XKB_KEY_Mode_switch; break;
+            //case VK_: keysym = XKB_KEY_script_switch; break;
+        case VK_NUMLOCK: keysym = XKB_KEY_Num_Lock; break;
+
+            //case VK_: keysym = XKB_KEY_KP_Space; break;
+            //case VK_: keysym = XKB_KEY_KP_Tab; break;
+            //case VK_: keysym = XKB_KEY_KP_Enter; break;
+            //case VK_: keysym = XKB_KEY_KP_F1; break;
+            //case VK_: keysym = XKB_KEY_KP_F2; break;
+            //case VK_: keysym = XKB_KEY_KP_F3; break;
+            //case VK_: keysym = XKB_KEY_KP_F4; break;
+            //case VK_: keysym = XKB_KEY_KP_Home; break;
+            //case VK_: keysym = XKB_KEY_KP_Left; break;
+            //case VK_: keysym = XKB_KEY_KP_Up; break;
+            //case VK_: keysym = XKB_KEY_KP_Right; break;
+            //case VK_: keysym = XKB_KEY_KP_Down; break;
+            //case VK_: keysym = XKB_KEY_KP_Prior; break;
+            //case VK_: keysym = XKB_KEY_KP_Page_Up; break;
+            //case VK_: keysym = XKB_KEY_KP_Next; break;
+            //case VK_: keysym = XKB_KEY_KP_Page_Down; break;
+            //case VK_: keysym = XKB_KEY_KP_End                        0xff9c
+            //case VK_: keysym = XKB_KEY_KP_Begin                      0xff9d
+            //case VK_: keysym = XKB_KEY_KP_Insert                     0xff9e
+            //case VK_: keysym = XKB_KEY_KP_Delete                     0xff9f
+            //case VK_: keysym = XKB_KEY_KP_Equal                      0xffbd  /* Equals */
+            //case VK_: keysym = XKB_KEY_KP_Multiply                   0xffaa
+            //case VK_: keysym = XKB_KEY_KP_Add                        0xffab
+            //case VK_: keysym = XKB_KEY_KP_Separator                  0xffac  /* Separator, often comma */
+            //case VK_: keysym = XKB_KEY_KP_Subtract                   0xffad
+            //case VK_: keysym = XKB_KEY_KP_Decimal                    0xffae
+            //case VK_: keysym = XKB_KEY_KP_Divide                     0xffaf
+
+        case VK_NUMPAD0: keysym = XKB_KEY_KP_0; break;
+        case VK_NUMPAD1: keysym = XKB_KEY_KP_1; break;
+        case VK_NUMPAD2: keysym = XKB_KEY_KP_2; break;
+        case VK_NUMPAD3: keysym = XKB_KEY_KP_3; break;
+        case VK_NUMPAD4: keysym = XKB_KEY_KP_4; break;
+        case VK_NUMPAD5: keysym = XKB_KEY_KP_5; break;
+        case VK_NUMPAD6: keysym = XKB_KEY_KP_6; break;
+        case VK_NUMPAD7: keysym = XKB_KEY_KP_7; break;
+        case VK_NUMPAD8: keysym = XKB_KEY_KP_8; break;
+        case VK_NUMPAD9: keysym = XKB_KEY_KP_9; break;
+
+        case VK_F1: keysym = XKB_KEY_F1; break;
+        case VK_F2: keysym = XKB_KEY_F2; break;
+        case VK_F3: keysym = XKB_KEY_F3; break;
+        case VK_F4: keysym = XKB_KEY_F4; break;
+        case VK_F5: keysym = XKB_KEY_F5; break;
+        case VK_F6: keysym = XKB_KEY_F6; break;
+        case VK_F7: keysym = XKB_KEY_F7; break;
+        case VK_F8: keysym = XKB_KEY_F8; break;
+        case VK_F9: keysym = XKB_KEY_F9; break;
+        case VK_F10: keysym = XKB_KEY_F10; break;
+        case VK_F11: keysym = XKB_KEY_F11; break;
+            //case VK_: keysym = XKB_KEY_L1; break;
+        case VK_F12: keysym = XKB_KEY_F12; break;
+            //case VK_: keysym = XKB_KEY_L2; break;
+        case VK_F13: keysym = XKB_KEY_F13; break;
+            //case VK_: keysym = XKB_KEY_L3; break;
+        case VK_F14: keysym = XKB_KEY_F14; break;
+            //case VK_: keysym = XKB_KEY_L4; break;
+        case VK_F15: keysym = XKB_KEY_F15; break;
+            //case VK_: keysym = XKB_KEY_L5; break;
+        case VK_F16: keysym = XKB_KEY_F16; break;
+            //case VK_: keysym = XKB_KEY_L6; break;
+        case VK_F17: keysym = XKB_KEY_F17; break;
+            //case VK_: keysym = XKB_KEY_L7; break;
+        case VK_F18: keysym = XKB_KEY_F18; break;
+            //case VK_: keysym = XKB_KEY_L8; break;
+        case VK_F19: keysym = XKB_KEY_F19; break;
+            //case VK_: keysym = XKB_KEY_L9; break;
+        case VK_F20: keysym = XKB_KEY_F20; break;
+            //case VK_: keysym = XKB_KEY_L10; break;
+        case VK_F21: keysym = XKB_KEY_F21; break;
+            //case VK_: keysym = XKB_KEY_R1; break;
+        case VK_F22: keysym = XKB_KEY_F22; break;
+            //case VK_: keysym = XKB_KEY_R2; break;
+        case VK_F23: keysym = XKB_KEY_F23; break;
+            //case VK_: keysym = XKB_KEY_R3; break;
+        case VK_F24: keysym = XKB_KEY_F24; break;
+            //case VK_: keysym = XKB_KEY_R4; break;
+            //case VK_: keysym = XKB_KEY_F25; break;
+            //case VK_: keysym = XKB_KEY_R5; break;
+            //case VK_: keysym = XKB_KEY_F26; break;
+            //case VK_: keysym = XKB_KEY_R6; break;
+            //case VK_: keysym = XKB_KEY_F27; break;
+            //case VK_: keysym = XKB_KEY_R7; break;
+            //case VK_: keysym = XKB_KEY_F28; break;
+            //case VK_: keysym = XKB_KEY_R8; break;
+            //case VK_: keysym = XKB_KEY_F29; break;
+            //case VK_: keysym = XKB_KEY_R9; break;
+            //case VK_: keysym = XKB_KEY_F30; break;
+            //case VK_: keysym = XKB_KEY_R10; break;
+            //case VK_: keysym = XKB_KEY_F31; break;
+            //case VK_: keysym = XKB_KEY_R11; break;
+            //case VK_: keysym = XKB_KEY_F32; break;
+            //case VK_: keysym = XKB_KEY_R12; break;
+            //case VK_: keysym = XKB_KEY_F33; break;
+            //case VK_: keysym = XKB_KEY_R13; break;
+            //case VK_: keysym = XKB_KEY_F34; break;
+            //case VK_: keysym = XKB_KEY_R14; break;
+            //case VK_: keysym = XKB_KEY_F35; break;
+            //case VK_: keysym = XKB_KEY_R15; break;
+        }
+
+        tsm_screen_selection_reset(data->screen);
+        bool b = tsm_vte_handle_keyboard(data->vte, keysym, ascii, mods, unicode);
+        InvalidateRect(hWnd, nullptr, TRUE);
+    }
 
     FORWARD_WM_KEYDOWN(hWnd, vk, cRepeat, flags, DefWindowProc);
 }
@@ -681,56 +760,7 @@ void RadTerminalWindowOnLButtonUp(HWND hWnd, int x, int y, UINT keyFlags)
 
 void RadTerminalWindowOnRButtonDown(HWND hWnd, BOOL fDoubleClick, int x, int y, UINT keyFlags)
 {
-    const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
-    char* buf = nullptr;
-    int len = tsm_screen_selection_copy(data->screen, &buf);
-    if (len > 0)
-    {
-        {   // trim empty space from end of lines
-            char* lastnonnull = nullptr;
-            for (int i = 0; i < len; ++i)
-            {
-                switch (buf[i])
-                {
-                case ' ':
-                case '\0':
-                    //buf[i] = ' ';
-                    break;
-
-                case '\n':
-                    if (lastnonnull != nullptr)
-                    {
-                        strncpy_s(lastnonnull, len - (lastnonnull - buf), buf + i, len - i);  // TODO len should be len - (lastnonnull - buf) I think
-                        int cut = (int) ((buf + i) - lastnonnull);
-                        len -= cut;
-                        i -= cut;
-                    }
-                    // fallthrough
-
-                default:
-                    lastnonnull = buf + i + 1;
-                    break;
-                }
-            }
-
-            *lastnonnull = '\0';
-            int cut = (int) ((buf + len) - lastnonnull);
-            len -= cut;
-        }
-
-        HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, len + 1);
-        memcpy(GlobalLock(hMem), buf, len + 1);
-        GlobalUnlock(hMem);
-        while (!OpenClipboard(hWnd))
-            ;
-        CHECK_ONLY(EmptyClipboard());
-        CHECK_ONLY(SetClipboardData(CF_TEXT, hMem));
-        CHECK_ONLY(CloseClipboard());
-
-        tsm_screen_selection_reset(data->screen);
-        InvalidateRect(hWnd, nullptr, TRUE);
-    }
-    free(buf);
+    ActionCopyToClipboard(hWnd);
 }
 
 void RadTerminalWindowOnTimer(HWND hWnd, UINT id)
