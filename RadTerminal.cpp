@@ -9,11 +9,11 @@
 
 // TODO
 // https://stackoverflow.com/questions/5966903/how-to-get-mousemove-and-mouseclick-in-bash
+// default settings
 // scrollback
 // remove polling
 // unicode/emoji
-// selection
-// cut/paste
+// paste
 // drop files
 // status bar
 // flash window on updates
@@ -38,6 +38,12 @@ void ShowError(HWND hWnd, LPCTSTR msg, HRESULT hr)
     { \
         ShowError(hWnd, _T(#x), HRESULT_FROM_WIN32(GetLastError())); \
         return (r); \
+    }
+
+#define CHECK_ONLY(x) \
+    if (!(x)) \
+    { \
+        ShowError(hWnd, _T(#x), HRESULT_FROM_WIN32(GetLastError())); \
     }
 
 LRESULT CALLBACK RadTerminalWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
@@ -154,17 +160,20 @@ struct tsm_screen_draw_info
 
 struct tsm_screen_draw_state
 {
-    POINT p;
     HFONT hFont;
     COLORREF bg;
     COLORREF fg;
+    BOOL inverse;
 };
 
 struct tsm_screen_draw_data
 {
     HDC hdc;
     const tsm_screen_draw_info* info;
+    COORD cur_pos;
+    unsigned int flags;
 
+    POINT pos;
     std::tstring drawbuf;
     tsm_screen_draw_state state;
 };
@@ -180,6 +189,12 @@ POINT GetScreenPos(const tsm_screen_draw_info* di, COORD pos)
     return { pos.X * sz.cx, pos.Y * sz.cy };
 }
 
+COORD GetCellPos(const tsm_screen_draw_info* di, POINT pos)
+{
+    SIZE sz = GetCellSize(di);
+    return { (SHORT) (pos.x / sz.cx), (SHORT) (pos.y / sz.cy) };
+}
+
 void Flush(tsm_screen_draw_data* const draw)
 {
     if (!draw->drawbuf.empty())
@@ -187,7 +202,15 @@ void Flush(tsm_screen_draw_data* const draw)
         HFONT hFontOrig = SelectFont(draw->hdc, draw->state.hFont);
         SetBkColor(draw->hdc, draw->state.bg);
         SetTextColor(draw->hdc, draw->state.fg);
-        TextOut(draw->hdc, draw->state.p.x, draw->state.p.y, draw->drawbuf.c_str(), (int) draw->drawbuf.length());
+        TextOut(draw->hdc, draw->pos.x, draw->pos.y, draw->drawbuf.c_str(), (int) draw->drawbuf.length());
+        if (draw->state.inverse)
+        {
+            SIZE sz = GetCellSize(draw->info);
+            sz.cx *= (LONG) draw->drawbuf.length();
+            RECT rc = Rect(draw->pos, sz);
+            --rc.left;
+            InvertRect(draw->hdc, &rc);
+        }
         draw->drawbuf.clear();
         SelectFont(draw->hdc, hFontOrig);
     }
@@ -225,13 +248,19 @@ int tsm_screen_draw(struct tsm_screen *con,
     // TODO Inverse, Protect, Blink
     COORD pos = { (SHORT) posx, (SHORT) posy };
     tsm_screen_draw_state state = {};
-    state.p = GetScreenPos(draw->info, pos);
+    POINT scpos = GetScreenPos(draw->info, pos);
     state.hFont = draw->info->hFonts[attr->bold][attr->italic][attr->underline];
     state.bg = RGB(attr->br, attr->bg, attr->bb);
     state.fg = RGB(attr->fr, attr->fg, attr->fb);
-    if (memcmp(&state, &draw->state, sizeof(tsm_screen_draw_state)) != 0)
+    if (memcmp(&draw->cur_pos, &pos, sizeof(COORD)) == 0 && // mouse is inversed in tsm, we undo that here
+        !(draw->flags & TSM_SCREEN_HIDE_CURSOR))
+        state.inverse = !attr->inverse;
+    else
+        state.inverse = attr->inverse;
+    if (scpos.y != draw->pos.y || memcmp(&state, &draw->state, sizeof(tsm_screen_draw_state)) != 0)
     {
         Flush(draw);
+        draw->pos = scpos;
         draw->state = state;
     }
     if (len > 0)
@@ -313,11 +342,11 @@ struct RadTerminalData
 
 void DrawCursor(HDC hdc, const RadTerminalData* const data)
 {
-    unsigned int flags = tsm_screen_get_flags(data->screen);
+    const unsigned int flags = tsm_screen_get_flags(data->screen);
     if (!(flags & TSM_SCREEN_HIDE_CURSOR))
     {
-        const COORD pos = { (SHORT) tsm_screen_get_cursor_x(data->screen), (SHORT) tsm_screen_get_cursor_y(data->screen) };
-        RECT rc = Rect(GetScreenPos(&data->draw_info, pos), GetCellSize(&data->draw_info));
+        const COORD cur_pos = { (SHORT) tsm_screen_get_cursor_x(data->screen), (SHORT) tsm_screen_get_cursor_y(data->screen) };
+        RECT rc = Rect(GetScreenPos(&data->draw_info, cur_pos), GetCellSize(&data->draw_info));
         // TODO Different cursor styles
         rc.top += (rc.bottom - rc.top) * 8 / 10;
         InvertRect(hdc, &rc);
@@ -413,7 +442,9 @@ void RadTerminalWindowOnPaint(HWND hWnd)
     tsm_screen_draw_data draw = {};
     draw.hdc = hdc;
     draw.info = &data->draw_info;
-    draw.state.p.y = -1;
+    draw.pos.y = -1;
+    draw.cur_pos = { (SHORT) tsm_screen_get_cursor_x(data->screen), (SHORT) tsm_screen_get_cursor_y(data->screen) };
+    draw.flags = tsm_screen_get_flags(data->screen);
     tsm_age_t age = tsm_screen_draw(data->screen, tsm_screen_draw, (void*) &draw);
     Flush(&draw);
 
@@ -602,10 +633,72 @@ void RadTerminalWindowOnKeyDown(HWND hWnd, UINT vk, BOOL fDown, int cRepeat, UIN
         //case VK_: keysym = XKB_KEY_R15; break;
     }
 
+    tsm_screen_selection_reset(data->screen);
     bool b = tsm_vte_handle_keyboard(data->vte, keysym, ascii, mods, unicode);
     InvalidateRect(hWnd, nullptr, TRUE);
 
     FORWARD_WM_KEYDOWN(hWnd, vk, cRepeat, flags, DefWindowProc);
+}
+
+int RadTerminalWindowOnMouseActivate(HWND hWnd, HWND hwndTopLevel, UINT codeHitTest, UINT msg)
+{
+    int result = FORWARD_WM_MOUSEACTIVATE(hWnd, hwndTopLevel, codeHitTest, msg, DefWindowProc);
+    if (result == MA_ACTIVATE)
+        return MA_ACTIVATEANDEAT;
+    return result;
+}
+
+void RadTerminalWindowOnMouseMove(HWND hWnd, int x, int y, UINT keyFlags)
+{
+    const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
+    if (GetCapture() == hWnd)
+    {
+        const COORD pos = GetCellPos(&data->draw_info, { x, y });
+        tsm_screen_selection_target(data->screen, pos.X, pos.Y);
+        InvalidateRect(hWnd, nullptr, TRUE);
+    }
+}
+
+void RadTerminalWindowOnLButtonDown(HWND hWnd, BOOL fDoubleClick, int x, int y, UINT keyFlags)
+{
+    const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
+    if (GetActiveWindow() == hWnd)
+    {
+        // TODO Handle fDoubleClick to select word
+        SetCapture(hWnd);
+        COORD pos = GetCellPos(&data->draw_info, { x, y });
+        tsm_screen_selection_start(data->screen, pos.X, pos.Y);
+        InvalidateRect(hWnd, nullptr, TRUE);
+    }
+}
+
+void RadTerminalWindowOnLButtonUp(HWND hWnd, int x, int y, UINT keyFlags)
+{
+    const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
+    if (GetCapture() == hWnd)
+        ReleaseCapture();
+}
+
+void RadTerminalWindowOnRButtonDown(HWND hWnd, BOOL fDoubleClick, int x, int y, UINT keyFlags)
+{
+    const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
+    char* buf = nullptr;
+    int len = tsm_screen_selection_copy(data->screen, &buf);
+    if (len > 0)
+    {
+        HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, len);
+        memcpy(GlobalLock(hMem), buf, len);
+        GlobalUnlock(hMem);
+        while (!OpenClipboard(hWnd))
+            ;
+        CHECK_ONLY(EmptyClipboard());
+        CHECK_ONLY(SetClipboardData(CF_TEXT, hMem));
+        CHECK_ONLY(CloseClipboard());
+
+        tsm_screen_selection_reset(data->screen);
+        InvalidateRect(hWnd, nullptr, TRUE);
+    }
+    free(buf);
 }
 
 void RadTerminalWindowOnTimer(HWND hWnd, UINT id)
@@ -703,6 +796,11 @@ LRESULT CALLBACK RadTerminalWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
         HANDLE_MSG(hWnd, WM_DESTROY, RadTerminalWindowOnDestroy);
         HANDLE_MSG(hWnd, WM_PAINT, RadTerminalWindowOnPaint);
         HANDLE_MSG(hWnd, WM_KEYDOWN, RadTerminalWindowOnKeyDown);
+        HANDLE_MSG(hWnd, WM_MOUSEACTIVATE, RadTerminalWindowOnMouseActivate);
+        HANDLE_MSG(hWnd, WM_MOUSEMOVE, RadTerminalWindowOnMouseMove);
+        HANDLE_MSG(hWnd, WM_LBUTTONDOWN, RadTerminalWindowOnLButtonDown);
+        HANDLE_MSG(hWnd, WM_LBUTTONUP, RadTerminalWindowOnLButtonUp);
+        HANDLE_MSG(hWnd, WM_RBUTTONDOWN, RadTerminalWindowOnRButtonDown);
         HANDLE_MSG(hWnd, WM_TIMER, RadTerminalWindowOnTimer);
         HANDLE_MSG(hWnd, WM_SIZE, RadTerminalWindowOnSize);
         HANDLE_MSG(hWnd, WM_SIZING, RadTerminalWindowOnSizing);
