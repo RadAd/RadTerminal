@@ -1,0 +1,3 @@
+[submodule "libtsm"]
+	path = libtsm
+	url = https://github.com/RadAd/libtsm.git

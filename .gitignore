@@ -1,0 +1,5 @@
+Bin/
+Int/
+.vs/
+*.VC.db
+*.vcxproj.user 

@@ -1,0 +1,44 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClInclude Include="libtsm\src\tsm\libtsm.h" />
+    <ClInclude Include="libtsm\src\tsm\libtsm-int.h" />
+    <ClInclude Include="libtsm\external\wcwidth\wcwidth.h">
+      <Filter>external</Filter>
+    </ClInclude>
+    <ClInclude Include="libtsm\external\xkbcommon\xkbcommon-keysyms.h">
+      <Filter>external</Filter>
+    </ClInclude>
+    <ClInclude Include="libtsm\src\shared\shl-array.h">
+      <Filter>shared</Filter>
+    </ClInclude>
+    <ClInclude Include="libtsm\src\shared\shl-htable.h">
+      <Filter>shared</Filter>
+    </ClInclude>
+    <ClInclude Include="libtsm\src\shared\shl-llog.h">
+      <Filter>shared</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="libtsm\src\tsm\tsm-render.c" />
+    <ClCompile Include="libtsm\src\tsm\tsm-screen.c" />
+    <ClCompile Include="libtsm\src\tsm\tsm-selection.c" />
+    <ClCompile Include="libtsm\src\tsm\tsm-unicode.c" />
+    <ClCompile Include="libtsm\src\tsm\tsm-vte.c" />
+    <ClCompile Include="libtsm\src\tsm\tsm-vte-charsets.c" />
+    <ClCompile Include="libtsm\external\wcwidth\wcwidth.c">
+      <Filter>external</Filter>
+    </ClCompile>
+    <ClCompile Include="libtsm\src\shared\shl-htable.c">
+      <Filter>shared</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="external">
+      <UniqueIdentifier>{99e2687b-9168-4201-87f1-ff62c9b0680e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shared">
+      <UniqueIdentifier>{a67ec51c-945f-4b13-acf3-4187ec50ebff}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
