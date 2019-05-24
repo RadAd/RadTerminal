@@ -387,9 +387,12 @@ int ActionCopyToClipboard(HWND hWnd)
                 }
             }
 
-            *lastnonnull = '\0';
-            int cut = (int) ((buf + len) - lastnonnull);
-            len -= cut;
+            if (lastnonnull != nullptr)
+            {
+                *lastnonnull = '\0';
+                int cut = (int) ((buf + len) - lastnonnull);
+                len -= cut;
+            }
         }
 
         HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, len + 1);
@@ -420,6 +423,33 @@ int ActionClearSelection(HWND hWnd)
     }
     free(buf);
     return len;
+}
+
+int ActionPasteFromClipboard(HWND hWnd)
+{
+    const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
+    if (IsClipboardFormatAvailable(CF_TEXT))
+    {
+        while (!OpenClipboard(hWnd))
+            ;
+        HANDLE hData = GetClipboardData(CF_TEXT);
+        if (hData != NULL)
+        {
+            LPCSTR lptstr = (LPCSTR) GlobalLock(hData);
+            while (*lptstr != '\0')
+            {
+                uint32_t keysym = XKB_KEY_NoSymbol;
+                uint32_t ascii = *lptstr;
+                uint32_t unicode = ascii;
+                unsigned int mods = 0; // TODO Should capital letters be faked with a Shift?
+                tsm_vte_handle_keyboard(data->vte, keysym, ascii, mods, unicode);
+                ++lptstr;
+            }
+            GlobalUnlock(hData);
+        }
+        CHECK_ONLY(CloseClipboard());
+    }
+    return 0;
 }
 
 BOOL RadTerminalWindowOnCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct)
@@ -536,6 +566,7 @@ void RadTerminalWindowOnKeyDown(HWND hWnd, UINT vk, BOOL fDown, int cRepeat, UIN
     {
     case VK_ESCAPE: bPassOn = ActionClearSelection(hWnd) < 0; break;
     case VK_RETURN: bPassOn = ActionCopyToClipboard(hWnd) < 0; break;
+    case 'V': if (KeyState[VK_CONTROL] & 0x80) bPassOn = ActionPasteFromClipboard(hWnd) < 0; break;
     }
 
     if (bPassOn)
@@ -545,15 +576,15 @@ void RadTerminalWindowOnKeyDown(HWND hWnd, UINT vk, BOOL fDown, int cRepeat, UIN
         uint32_t unicode = ascii;
 
         unsigned int mods = 0;
-        if (KeyState[VK_SHIFT] & 0x8)
+        if (KeyState[VK_SHIFT] & 0x80)
             mods |= TSM_SHIFT_MASK;
-        if (KeyState[VK_SCROLL] & 0x8)
+        if (KeyState[VK_SCROLL] & 0x80)
             mods |= TSM_LOCK_MASK;
-        if (KeyState[VK_CONTROL] & 0x8)
+        if (KeyState[VK_CONTROL] & 0x80)
             mods |= TSM_CONTROL_MASK;
-        if (KeyState[VK_MENU] & 0x8)
+        if (KeyState[VK_MENU] & 0x80)
             mods |= TSM_ALT_MASK;
-        if (KeyState[VK_LWIN] & 0x8)
+        if (KeyState[VK_LWIN] & 0x80)
             mods |= TSM_LOGO_MASK;
 
         UINT scan = (cRepeat >> 8);
@@ -760,7 +791,8 @@ void RadTerminalWindowOnLButtonUp(HWND hWnd, int x, int y, UINT keyFlags)
 
 void RadTerminalWindowOnRButtonDown(HWND hWnd, BOOL fDoubleClick, int x, int y, UINT keyFlags)
 {
-    ActionCopyToClipboard(hWnd);
+    if (ActionCopyToClipboard(hWnd) < 0)
+        ActionPasteFromClipboard(hWnd);
 }
 
 void RadTerminalWindowOnTimer(HWND hWnd, UINT id)
