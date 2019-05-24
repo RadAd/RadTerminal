@@ -193,6 +193,23 @@ void Flush(tsm_screen_draw_data* const draw)
     }
 }
 
+static size_t ucs4_to_utf16(uint32_t wc, wchar_t *wbuf)
+{
+    if (wc < 0x10000)
+    {
+        wbuf[0] = wc;
+        return 1;
+    }
+    else
+    {
+        wc -= 0x10000;
+        wbuf[0] = 0xD800 | ((wc >> 10) & 0x3FF);
+        wbuf[1] = 0xDC00 | (wc & 0x3FF);
+        return 2;
+    }
+}
+
+
 int tsm_screen_draw(struct tsm_screen *con,
     uint64_t id,
     const uint32_t *ch,
@@ -222,14 +239,15 @@ int tsm_screen_draw(struct tsm_screen *con,
         for (int i = 0; i < len; ++i)
         {
             uint32_t chr = ch[i];
-
+#ifdef _UNICODE
+            wchar_t buf[2];
+            size_t buflen = ucs4_to_utf16(chr, buf);
+            draw->drawbuf.append(buf, buflen);
+#else
             char buf[4];
             size_t buflen = tsm_ucs4_to_utf8(chr, buf);
-
-            wchar_t bufw[4];
-            int bufwlen = MultiByteToWideChar(CP_UTF8, 0, buf, (int) buflen, bufw, ARRAYSIZE(bufw));
-
-            draw->drawbuf.append(bufw, bufwlen);
+            draw->drawbuf.append(buf, buflen);
+#endif
         }
     }
     else
