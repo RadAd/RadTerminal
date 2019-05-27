@@ -10,7 +10,8 @@
 // TODO
 // https://stackoverflow.com/questions/5966903/how-to-get-mousemove-and-mouseclick-in-bash
 // default settings
-// scrollbar
+// keyboard select mode
+// specify an icon on command line
 // remove polling
 // unicode/emoji
 // drop files
@@ -18,7 +19,13 @@
 // flash window on updates
 // dynamically change font
 // transparency
-// check for monospace font
+// hide scrollbar if scrollback not enabled
+// support bel
+// support
+//     ESC [ ? 12 h                                     ATT160 Text Cursor Enable Blinking
+//     ESC [ ? 12 l                                     ATT160 Text Cursor Enable Blinking
+//     ESC ] 4 ; <i> ; rgb : <r> / <g> / <b> ESC        Modify Screen Colors
+// See https://docs.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences
 
 #ifdef _UNICODE
 #define tstring wstring
@@ -37,7 +44,7 @@ bool MemEqual(const T& a, const T& b)
 void ShowError(HWND hWnd, LPCTSTR msg, HRESULT hr)
 {
     TCHAR fullmsg[1024];
-    _stprintf_s(fullmsg, _T("%s: 0x%x"), msg, hr);
+    _stprintf_s(fullmsg, _T("%s: 0x%08x"), msg, hr);
     MessageBox(hWnd, fullmsg, PROJ_NAME, MB_ICONERROR);
 }
 
@@ -52,6 +59,12 @@ void ShowError(HWND hWnd, LPCTSTR msg, HRESULT hr)
     if (!(x)) \
     { \
         ShowError(hWnd, _T(#x), HRESULT_FROM_WIN32(GetLastError())); \
+    }
+
+#define VERIFY(x) \
+    if (!(x)) \
+    { \
+        ShowError(hWnd, _T(#x), 0); \
     }
 
 LRESULT CALLBACK RadTerminalWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
@@ -123,7 +136,7 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE, PTSTR pCmdLine, int nCmdSho
         0,
         MAKEINTATOM(atom),
         PROJ_NAME,
-        WS_OVERLAPPEDWINDOW,
+        WS_OVERLAPPEDWINDOW | WS_VSCROLL,
         CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
         NULL,       // Parent window
         NULL,       // Menu
@@ -241,7 +254,6 @@ static size_t ucs4_to_utf16(uint32_t wc, wchar_t *wbuf)
         return 2;
     }
 }
-
 
 int tsm_screen_draw(struct tsm_screen *con,
     uint64_t id,
@@ -363,6 +375,37 @@ void DrawCursor(HDC hdc, const RadTerminalData* const data)
     }
 }
 
+void FixScrollbar(HWND hWnd)
+{
+    const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
+    const unsigned int flags = tsm_screen_get_flags(data->screen);
+
+    SCROLLINFO si = {};
+    si.cbSize = sizeof(si);
+    si.fMask = SIF_PAGE | SIF_RANGE | SIF_POS | SIF_DISABLENOSCROLL;
+    si.nPage = tsm_screen_get_height(data->screen);
+    if (!(flags & TSM_SCREEN_ALTERNATE))
+    {
+        si.nMax = si.nPage + tsm_screen_sb_count(data->screen) - 1;
+        si.nPos = si.nMax - si.nPage - tsm_screen_sb_depth(data->screen) + 1;
+    }
+    else
+    {
+        si.nMax = si.nPage - 1;
+        si.nPos = si.nMax - si.nPage + 1;
+    }
+    SetScrollInfo(hWnd, SB_VERT, &si, TRUE);
+}
+
+BOOL CheckScrollBar(HWND hWnd)
+{
+    const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
+    int nPage = tsm_screen_get_height(data->screen);
+    int nMax = nPage + tsm_screen_sb_count(data->screen) - 1;
+    int nPos = nMax - nPage - tsm_screen_sb_depth(data->screen) + 1;
+    return GetScrollPos(hWnd, SB_VERT) == nPos;
+}
+
 int ActionCopyToClipboard(HWND hWnd)
 {
     const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
@@ -469,6 +512,10 @@ int ActionScrollbackUp(HWND hWnd)
     if (!(flags & TSM_SCREEN_ALTERNATE))
     {
         tsm_screen_sb_up(data->screen, 1);
+        int sp = GetScrollPos(hWnd, SB_VERT);
+        sp -= 1;
+        SetScrollPos(hWnd, SB_VERT, sp, TRUE);
+        VERIFY(CheckScrollBar(hWnd));
         InvalidateRect(hWnd, nullptr, TRUE);
     }
     return 0;
@@ -481,6 +528,10 @@ int ActionScrollbackDown(HWND hWnd)
     if (!(flags & TSM_SCREEN_ALTERNATE))
     {
         tsm_screen_sb_down(data->screen, 1);
+        int sp = GetScrollPos(hWnd, SB_VERT);
+        sp += 1;
+        SetScrollPos(hWnd, SB_VERT, sp, TRUE);
+        VERIFY(CheckScrollBar(hWnd));
         InvalidateRect(hWnd, nullptr, TRUE);
     }
     return 0;
@@ -524,11 +575,15 @@ BOOL RadTerminalWindowOnCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct)
     HDC hdc = GetDC(hWnd);
     SelectFont(hdc, data->draw_info.hFonts[0][0][0]);
     GetTextMetrics(hdc, &data->draw_info.tm);
+    VERIFY(!(data->draw_info.tm.tmPitchAndFamily & TMPF_FIXED_PITCH));
     ReleaseDC(hWnd, hdc);
 
     RECT r = Rect({ 0, 0 }, GetScreenPos(&data->draw_info, rtc->szCon));
     const DWORD style = GetWindowStyle(hWnd);
-    CHECK(AdjustWindowRect(&r, style, FALSE), FALSE);
+    const DWORD exstyle = GetWindowExStyle(hWnd);
+    if (style & WS_VSCROLL)
+        r.right += GetSystemMetrics(SM_CXVSCROLL);
+    CHECK(AdjustWindowRectEx(&r, style, FALSE, exstyle), FALSE);
     CHECK(SetWindowPos(hWnd, 0, r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER), FALSE);
 
     HICON hIconLarge = NULL, hIconSmall = NULL;
@@ -593,7 +648,6 @@ void RadTerminalWindowOnPaint(HWND hWnd)
 void RadTerminalWindowOnKeyDown(HWND hWnd, UINT vk, BOOL fDown, int cRepeat, UINT flags)
 {
     const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
-    //uint32_t ascii = MapVirtualKeyA(vk, MAPVK_VK_TO_CHAR);
     BYTE KeyState[256];
     GetKeyboardState(KeyState);
 
@@ -602,6 +656,7 @@ void RadTerminalWindowOnKeyDown(HWND hWnd, UINT vk, BOOL fDown, int cRepeat, UIN
     {
     case VK_ESCAPE: bPassOn = ActionClearSelection(hWnd) < 0; break;
     case VK_RETURN: bPassOn = ActionCopyToClipboard(hWnd) < 0; break;
+    case 'C': if (KeyState[VK_CONTROL] & 0x80) bPassOn = ActionCopyToClipboard(hWnd) < 0; break;
     case 'V': if (KeyState[VK_CONTROL] & 0x80) bPassOn = ActionPasteFromClipboard(hWnd) < 0; break;
     case VK_UP: if (KeyState[VK_CONTROL] & 0x80) bPassOn = ActionScrollbackUp(hWnd) < 0; break;
     case VK_DOWN: if (KeyState[VK_CONTROL] & 0x80) bPassOn = ActionScrollbackDown(hWnd) < 0; break;
@@ -843,7 +898,10 @@ void RadTerminalWindowOnTimer(HWND hWnd, UINT id)
     case 1:
         {
             if (tsm_vte_read(data->vte, data->spd.hOutput))
+            {
+                FixScrollbar(hWnd);
                 InvalidateRect(hWnd, nullptr, TRUE);
+            }
 
             DWORD exitcode = 0;
             if (GetExitCodeProcess(data->spd.pi.hProcess, &exitcode) && exitcode != STILL_ACTIVE)
@@ -876,6 +934,8 @@ void RadTerminalWindowOnSize(HWND hWnd, UINT state, int cx, int cy)
         COORD size = { (SHORT) (cx / sz.cx), (SHORT) (cy / sz.cy) };
         int e = tsm_screen_resize(data->screen, size.X, size.Y);
         ResizePseudoConsole(data->spd.hPC, size);
+
+        FixScrollbar(hWnd);
     }
 }
 
@@ -883,7 +943,10 @@ void RadTerminalWindowOnSizing(HWND hWnd, UINT edge, LPRECT prRect)
 {
     const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
     const DWORD style = GetWindowStyle(hWnd);
-    UnadjustWindowRect(prRect, style, FALSE);
+    const DWORD exstyle = GetWindowExStyle(hWnd);
+    CHECK_ONLY(UnadjustWindowRectEx(prRect, style, FALSE, exstyle));
+    if (style & WS_VSCROLL)
+        prRect->right -= GetSystemMetrics(SM_CXVSCROLL);
     SIZE sz = GetCellSize(&data->draw_info);
     COORD size = { (SHORT) ((prRect->right - prRect->left) / sz.cx), (SHORT) ((prRect->bottom - prRect->top) / sz.cy) };
 
@@ -909,13 +972,56 @@ void RadTerminalWindowOnSizing(HWND hWnd, UINT edge, LPRECT prRect)
         break;
     }
 
-    AdjustWindowRect(prRect, style, FALSE);
+    if (style & WS_VSCROLL)
+        prRect->right += GetSystemMetrics(SM_CXVSCROLL);
+    CHECK_ONLY(AdjustWindowRectEx(prRect, style, FALSE, exstyle));
+    //prRect->right += 100;
 }
 
 void RadTerminalWindowOnActivate(HWND hWnd, UINT state, HWND hwndActDeact, BOOL fMinimized)
 {
     if (state == WA_INACTIVE)
         InvalidateRect(hWnd, nullptr, TRUE);
+}
+
+void RadTerminalWindowOnVScroll(HWND hWnd, HWND hWndCtl, UINT code, int pos)
+{
+    const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
+    const int op = GetScrollPos(hWnd, SB_VERT);
+    int d = 0;
+    switch (code)
+    {
+    case SB_LINEUP:
+        d -= 1;
+        break;
+
+    case SB_LINEDOWN:
+        d += 1;
+        break;
+
+    case SB_PAGEUP:
+        d -= tsm_screen_get_height(data->screen) - 1;
+        break;
+
+    case SB_PAGEDOWN:
+        d += tsm_screen_get_height(data->screen) - 1;
+        break;
+
+    case SB_THUMBTRACK:
+        d = pos - (tsm_screen_sb_count(data->screen) - tsm_screen_sb_depth(data->screen));
+        break;
+    }
+
+    if (d != 0)
+    {
+        if (d < 0)
+            tsm_screen_sb_up(data->screen, -d);
+        else
+            tsm_screen_sb_down(data->screen, d);
+        InvalidateRect(hWnd, nullptr, TRUE);
+        SetScrollPos(hWnd, SB_VERT, op + d, TRUE);
+        VERIFY(CheckScrollBar(hWnd));
+    }
 }
 
 /* void Cls_OnSizing(HWND hwnd, UINT edge, LPRECT prRect) */
@@ -939,7 +1045,7 @@ LRESULT CALLBACK RadTerminalWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
         HANDLE_MSG(hWnd, WM_SIZE, RadTerminalWindowOnSize);
         HANDLE_MSG(hWnd, WM_SIZING, RadTerminalWindowOnSizing);
         HANDLE_MSG(hWnd, WM_ACTIVATE, RadTerminalWindowOnActivate);
-        //case (WM_KEYDOWN): HANDLE_WM_KEYDOWN((hWnd), (wParam), (lParam), (RadTerminalWindowOnKeyDown)); return 1;
+        HANDLE_MSG(hWnd, WM_VSCROLL, RadTerminalWindowOnVScroll);
         //HANDLE_MSG(hWnd, WM_CHAR, RadTerminalWindowOnChar);
     default: return DefWindowProc(hWnd, uMsg, wParam, lParam);
     }

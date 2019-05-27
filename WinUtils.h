@@ -18,6 +18,24 @@ inline BOOL UnadjustWindowRect(
     return fRc;
 }
 
+inline BOOL UnadjustWindowRectEx(
+    LPRECT prc,
+    DWORD dwStyle,
+    BOOL fMenu,
+    DWORD dwExStyle)
+{
+    RECT rc;
+    SetRectEmpty(&rc);
+    BOOL fRc = AdjustWindowRectEx(&rc, dwStyle, fMenu, dwExStyle);
+    if (fRc) {
+        prc->left -= rc.left;
+        prc->top -= rc.top;
+        prc->right -= rc.right;
+        prc->bottom -= rc.bottom;
+    }
+    return fRc;
+}
+
 inline RECT Rect(POINT p1, POINT p2)
 {
     return { p1.x, p1.y, p2.x, p2.y };
