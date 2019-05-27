@@ -465,16 +465,24 @@ int ActionPasteFromClipboard(HWND hWnd)
 int ActionScrollbackUp(HWND hWnd)
 {
     const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
-    tsm_screen_sb_up(data->screen, 1);
-    InvalidateRect(hWnd, nullptr, TRUE);
+    const unsigned int flags = tsm_screen_get_flags(data->screen);
+    if (!(flags & TSM_SCREEN_ALTERNATE))
+    {
+        tsm_screen_sb_up(data->screen, 1);
+        InvalidateRect(hWnd, nullptr, TRUE);
+    }
     return 0;
 }
 
 int ActionScrollbackDown(HWND hWnd)
 {
     const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
-    tsm_screen_sb_down(data->screen, 1);
-    InvalidateRect(hWnd, nullptr, TRUE);
+    const unsigned int flags = tsm_screen_get_flags(data->screen);
+    if (!(flags & TSM_SCREEN_ALTERNATE))
+    {
+        tsm_screen_sb_down(data->screen, 1);
+        InvalidateRect(hWnd, nullptr, TRUE);
+    }
     return 0;
 }
 
