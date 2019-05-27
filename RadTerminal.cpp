@@ -9,13 +9,13 @@
 
 // TODO
 // https://stackoverflow.com/questions/5966903/how-to-get-mousemove-and-mouseclick-in-bash
-// default settings
 // keyboard select mode
 // specify an icon on command line
 // remove polling
 // unicode/emoji
-// drop files
-// status bar
+// find
+// status bar ???
+// tooltip while resizing ???
 // flash window on updates
 // dynamically change font
 // transparency
@@ -26,6 +26,7 @@
 //     ESC [ ? 12 l                                     ATT160 Text Cursor Enable Blinking
 //     ESC ] 4 ; <i> ; rgb : <r> / <g> / <b> ESC        Modify Screen Colors
 // See https://docs.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences
+// Tabs in frame - see https://docs.microsoft.com/en-au/windows/desktop/dwm/customframe
 
 #ifdef _UNICODE
 #define tstring wstring
@@ -156,7 +157,7 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE, PTSTR pCmdLine, int nCmdSho
     ParseCommandLine(rtc);
 
     HWND hChildWnd = CreateWindowEx(
-        0,
+        WS_EX_ACCEPTFILES,
         MAKEINTATOM(atom),
         PROJ_NAME,
         WS_OVERLAPPEDWINDOW | WS_VSCROLL,
@@ -863,7 +864,7 @@ void RadTerminalWindowOnKeyDown(HWND hWnd, UINT vk, BOOL fDown, int cRepeat, UIN
         }
 
         tsm_screen_selection_reset(data->screen);
-        if (ascii != 0 || unicode != 0)
+        if (vk != VK_SHIFT && vk != VK_CONTROL && vk != VK_MENU)
             tsm_screen_sb_reset(data->screen);
         bool b = tsm_vte_handle_keyboard(data->vte, keysym, ascii, mods, unicode);
         InvalidateRect(hWnd, nullptr, TRUE);
@@ -1051,6 +1052,38 @@ void RadTerminalWindowOnVScroll(HWND hWnd, HWND hWndCtl, UINT code, int pos)
     }
 }
 
+void RadTerminalWindowOnDropFiles(HWND hWnd, HDROP hDrop)
+{
+    const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
+    const int count = DragQueryFile(hDrop, 0xFFFFFFFF, nullptr, 0);
+    for (int i = 0; i < count; ++i)
+    {
+        TCHAR buf[MAX_PATH];
+        DragQueryFile(hDrop, i, buf, ARRAYSIZE(buf));
+
+        const uint32_t keysym = XKB_KEY_NoSymbol;
+
+        if (i != 0)
+            tsm_vte_handle_keyboard(data->vte, keysym, ' ', 0, L' ');
+
+        LPCTSTR lptstr = buf;
+        while (*lptstr != '\0')
+        {
+#ifdef _UNICODE
+            uint32_t ascii = 0;
+            uint32_t unicode = *lptstr;
+#else
+            uint32_t ascii = *lptstr;
+            uint32_t unicode = 0;
+#endif
+            unsigned int mods = 0; // TODO Should capital letters be faked with a Shift?
+            tsm_vte_handle_keyboard(data->vte, keysym, ascii, mods, unicode);
+            ++lptstr;
+        }
+    }
+    DragFinish(hDrop);
+}
+
 /* void Cls_OnSizing(HWND hwnd, UINT edge, LPRECT prRect) */
 #define HANDLE_WM_SIZING(hwnd, wParam, lParam, fn) \
     ((fn)((hwnd), (UINT)(wParam), (LPRECT)lParam), TRUE)
@@ -1073,6 +1106,7 @@ LRESULT CALLBACK RadTerminalWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
         HANDLE_MSG(hWnd, WM_SIZING, RadTerminalWindowOnSizing);
         HANDLE_MSG(hWnd, WM_ACTIVATE, RadTerminalWindowOnActivate);
         HANDLE_MSG(hWnd, WM_VSCROLL, RadTerminalWindowOnVScroll);
+        HANDLE_MSG(hWnd, WM_DROPFILES, RadTerminalWindowOnDropFiles);
         //HANDLE_MSG(hWnd, WM_CHAR, RadTerminalWindowOnChar);
     default: return DefWindowProc(hWnd, uMsg, wParam, lParam);
     }
