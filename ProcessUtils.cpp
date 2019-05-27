@@ -87,7 +87,7 @@ namespace {
         }
 
         TCHAR localcmd[MAX_PATH];
-        wcscpy_s(localcmd, cmd);
+        _tcscpy_s(localcmd, cmd);
         if (!CreateProcess(nullptr, localcmd, nullptr, nullptr, bInheritHandles, dwCreationFlags, nullptr, nullptr, &si.StartupInfo, &spd.pi))
         {
             spd.hr = HRESULT_FROM_WIN32(GetLastError());

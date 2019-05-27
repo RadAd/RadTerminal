@@ -562,9 +562,13 @@ BOOL RadTerminalWindowOnCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct)
     tsm_vte_set_osc_cb(data->vte, tsm_vte_osc, hWnd);
     if (rtc->strScheme != nullptr)
     {
+#ifdef _UNICODE
         char scheme[1024];
         WideCharToMultiByte(CP_UTF8, 0, rtc->strScheme, -1, scheme, ARRAYSIZE(scheme), nullptr, nullptr);
         e = tsm_vte_set_palette(data->vte, scheme);
+#else
+        e = tsm_vte_set_palette(data->vte, rtc->strScheme);
+#endif
     }
 
     for (int b = 0; b < 2; ++b)
