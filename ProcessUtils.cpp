@@ -25,6 +25,8 @@ namespace {
         std::vector<BYTE> attrList;
         si.StartupInfo.cb = sizeof(si);
 
+        BOOL bInheritHandles = FALSE;
+
         if (bUseConPty)
         {
             spd.hr = CreatePseudoConsole(
@@ -81,11 +83,12 @@ namespace {
             si.StartupInfo.hStdOutput = hOutput;
             si.StartupInfo.hStdError = si.StartupInfo.hStdOutput;
             dwCreationFlags |= CREATE_NO_WINDOW;
+            bInheritHandles = TRUE;
         }
 
         TCHAR localcmd[MAX_PATH];
         wcscpy_s(localcmd, cmd);
-        if (!CreateProcess(nullptr, localcmd, nullptr, nullptr, FALSE, dwCreationFlags, nullptr, nullptr, &si.StartupInfo, &spd.pi))
+        if (!CreateProcess(nullptr, localcmd, nullptr, nullptr, bInheritHandles, dwCreationFlags, nullptr, nullptr, &si.StartupInfo, &spd.pi))
         {
             spd.hr = HRESULT_FROM_WIN32(GetLastError());
             CleanupSubProcess(&spd);
@@ -102,18 +105,21 @@ SubProcessData CreateSubProcess(LPCTSTR cmd, COORD size, bool bUseConPty)
 {
     SubProcessData spd = {};
 
+    SECURITY_ATTRIBUTES sa = {};
+    sa.bInheritHandle = !bUseConPty;
+
     HANDLE hReadPipeInput = NULL;
     HANDLE hWritePipeInput = NULL;
-    if (spd.hr == S_OK && !CreatePipe(&hReadPipeInput, &hWritePipeInput, nullptr, 0))
+    if (spd.hr == S_OK && !CreatePipe(&hReadPipeInput, &hWritePipeInput, &sa, 0))
         spd.hr = HRESULT_FROM_WIN32(GetLastError());
 
     HANDLE hWritePipeOutput = NULL;
     HANDLE hReadPipeOutput = NULL;
-    if (spd.hr == S_OK && !CreatePipe(&hReadPipeOutput, &hWritePipeOutput, nullptr, 0))
+    if (spd.hr == S_OK && !CreatePipe(&hReadPipeOutput, &hWritePipeOutput, &sa, 0))
         spd.hr = HRESULT_FROM_WIN32(GetLastError());
 
     if (spd.hr == S_OK)
-        spd = CreateSubProcess(cmd, size, hReadPipeInput, hWritePipeOutput, true);
+        spd = CreateSubProcess(cmd, size, hReadPipeInput, hWritePipeOutput, bUseConPty);
 
     if (spd.hr == S_OK)
     {
