@@ -346,6 +346,26 @@ void tsm_vte_write(struct tsm_vte *vte,
     //FlushFileBuffers(hInput);
 }
 
+void tsm_vte_paste(struct tsm_vte *vte,
+    LPCTSTR lptstr)
+{
+    const uint32_t keysym = XKB_KEY_NoSymbol;
+
+    while (*lptstr != '\0')
+    {
+#ifdef _UNICODE
+        uint32_t ascii = 0;
+        uint32_t unicode = *lptstr;
+#else
+        uint32_t ascii = *lptstr;
+        uint32_t unicode = 0;
+#endif
+        unsigned int mods = 0; // TODO Should capital letters be faked with a Shift?
+        tsm_vte_handle_keyboard(vte, keysym, ascii, mods, unicode);
+        ++lptstr;
+    }
+}
+
 bool tsm_vte_read(struct tsm_vte *vte, HANDLE hOutput)
 {
     DWORD avail = 0;
@@ -509,19 +529,15 @@ int ActionPasteFromClipboard(HWND hWnd)
     {
         while (!OpenClipboard(hWnd))
             ;
+#ifdef _UNICODE
+        HANDLE hData = GetClipboardData(CF_UNICODETEXT);
+#else
         HANDLE hData = GetClipboardData(CF_TEXT);
+#endif
         if (hData != NULL)
         {
-            LPCSTR lptstr = (LPCSTR) GlobalLock(hData);
-            while (*lptstr != '\0')
-            {
-                uint32_t keysym = XKB_KEY_NoSymbol;
-                uint32_t ascii = *lptstr;
-                uint32_t unicode = ascii;
-                unsigned int mods = 0; // TODO Should capital letters be faked with a Shift?
-                tsm_vte_handle_keyboard(data->vte, keysym, ascii, mods, unicode);
-                ++lptstr;
-            }
+            LPCTSTR lptstr = (LPCTSTR) GlobalLock(hData);
+            tsm_vte_paste(data->vte, lptstr);
             GlobalUnlock(hData);
         }
         CHECK_ONLY(CloseClipboard());
@@ -1064,22 +1080,8 @@ void RadTerminalWindowOnDropFiles(HWND hWnd, HDROP hDrop)
         const uint32_t keysym = XKB_KEY_NoSymbol;
 
         if (i != 0)
-            tsm_vte_handle_keyboard(data->vte, keysym, ' ', 0, L' ');
-
-        LPCTSTR lptstr = buf;
-        while (*lptstr != '\0')
-        {
-#ifdef _UNICODE
-            uint32_t ascii = 0;
-            uint32_t unicode = *lptstr;
-#else
-            uint32_t ascii = *lptstr;
-            uint32_t unicode = 0;
-#endif
-            unsigned int mods = 0; // TODO Should capital letters be faked with a Shift?
-            tsm_vte_handle_keyboard(data->vte, keysym, ascii, mods, unicode);
-            ++lptstr;
-        }
+            tsm_vte_paste(data->vte, _T(" "));
+        tsm_vte_paste(data->vte, buf);
     }
     DragFinish(hDrop);
 }
