@@ -10,13 +10,15 @@
 // TODO
 // https://stackoverflow.com/questions/5966903/how-to-get-mousemove-and-mouseclick-in-bash
 // default settings
-// scrollback
+// scrollbar
 // remove polling
 // unicode/emoji
-// paste
 // drop files
 // status bar
 // flash window on updates
+// dynamically change font
+// transparency
+// check for monospace font
 
 #ifdef _UNICODE
 #define tstring wstring
@@ -25,6 +27,12 @@
 #endif
 
 #define PROJ_NAME TEXT("RadTerminal")
+
+template <class T>
+bool MemEqual(const T& a, const T& b)
+{
+    return memcmp(&a, &b, sizeof(T)) == 0;
+}
 
 void ShowError(HWND hWnd, LPCTSTR msg, HRESULT hr)
 {
@@ -54,6 +62,7 @@ struct RadTerminalCreate
     LPTSTR strFontFace;
     LPTSTR strScheme;
     COORD szCon;
+    int sb;
     std::tstring strCmd;
 };
 
@@ -78,6 +87,9 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE, PTSTR pCmdLine, int nCmdSho
     rtc.strFontFace = _T("Consolas");
     //rtc.strScheme = _T("solarized");
     rtc.szCon = { 80, 25 };
+    rtc.sb = 1000;
+    //rtc.strCmd = _T("%COMSPEC%");
+    rtc.strCmd = _T("cmd");
 
     bool command = false;
     for (int i = 1; i < __argc; ++i)
@@ -98,16 +110,14 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE, PTSTR pCmdLine, int nCmdSho
             rtc.strFontFace = __targv[++i];
         else if (_tcsicmp(arg, _T("-font_size")) == 0)
             rtc.iFontHeight = _tstoi(__targv[++i]);
+        else if (_tcsicmp(arg, _T("-sb")) == 0)
+            rtc.sb = _tstoi(__targv[++i]);
         else
         {
             rtc.strCmd = arg;
             command = true;
         }
     }
-
-    if (rtc.strCmd.empty())
-        //rtc.strCmd = _T("%COMSPEC%");
-        rtc.strCmd = _T("cmd");
 
     HWND hChildWnd = CreateWindowEx(
         0,
@@ -245,19 +255,19 @@ int tsm_screen_draw(struct tsm_screen *con,
     void *data)
 {
     tsm_screen_draw_data* const draw = (tsm_screen_draw_data*) data;
-    // TODO Inverse, Protect, Blink
+    // TODO Protect, Blink
     COORD pos = { (SHORT) posx, (SHORT) posy };
     tsm_screen_draw_state state = {};
     POINT scpos = GetScreenPos(draw->info, pos);
     state.hFont = draw->info->hFonts[attr->bold][attr->italic][attr->underline];
     state.bg = RGB(attr->br, attr->bg, attr->bb);
     state.fg = RGB(attr->fr, attr->fg, attr->fb);
-    if (memcmp(&draw->cur_pos, &pos, sizeof(COORD)) == 0 && // mouse is inversed in tsm, we undo that here
+    if (MemEqual(draw->cur_pos, pos) && // mouse is inversed in tsm, we undo that here
         !(draw->flags & TSM_SCREEN_HIDE_CURSOR))
         state.inverse = !attr->inverse;
     else
         state.inverse = attr->inverse;
-    if (scpos.y != draw->pos.y || memcmp(&state, &draw->state, sizeof(tsm_screen_draw_state)) != 0)
+    if (scpos.y != draw->pos.y || !MemEqual(state, draw->state))
     {
         Flush(draw);
         draw->pos = scpos;
@@ -345,7 +355,7 @@ void DrawCursor(HDC hdc, const RadTerminalData* const data)
     const unsigned int flags = tsm_screen_get_flags(data->screen);
     if (!(flags & TSM_SCREEN_HIDE_CURSOR))
     {
-        const COORD cur_pos = { (SHORT) tsm_screen_get_cursor_x(data->screen), (SHORT) tsm_screen_get_cursor_y(data->screen) };
+        const COORD cur_pos = { (SHORT) tsm_screen_get_cursor_x(data->screen), (SHORT) (tsm_screen_get_cursor_y(data->screen) + tsm_screen_sb_depth(data->screen)) };
         RECT rc = Rect(GetScreenPos(&data->draw_info, cur_pos), GetCellSize(&data->draw_info));
         // TODO Different cursor styles
         rc.top += (rc.bottom - rc.top) * 8 / 10;
@@ -452,6 +462,22 @@ int ActionPasteFromClipboard(HWND hWnd)
     return 0;
 }
 
+int ActionScrollbackUp(HWND hWnd)
+{
+    const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
+    tsm_screen_sb_up(data->screen, 1);
+    InvalidateRect(hWnd, nullptr, TRUE);
+    return 0;
+}
+
+int ActionScrollbackDown(HWND hWnd)
+{
+    const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
+    tsm_screen_sb_down(data->screen, 1);
+    InvalidateRect(hWnd, nullptr, TRUE);
+    return 0;
+}
+
 BOOL RadTerminalWindowOnCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct)
 {
     const RadTerminalCreate* const rtc = (RadTerminalCreate*) lpCreateStruct->lpCreateParams;
@@ -471,6 +497,8 @@ BOOL RadTerminalWindowOnCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct)
     int e = 0;
     e = tsm_screen_new(&data->screen, tsm_log, nullptr);
     e = tsm_screen_resize(data->screen, rtc->szCon.X, rtc->szCon.Y);
+    if (rtc->sb > 0)
+        tsm_screen_set_max_sb(data->screen, rtc->sb);
     e = tsm_vte_new(&data->vte, data->screen, tsm_vte_write, data->spd.hInput, tsm_log, nullptr);
     tsm_vte_set_osc_cb(data->vte, tsm_vte_osc, hWnd);
     if (rtc->strScheme != nullptr)
@@ -542,7 +570,7 @@ void RadTerminalWindowOnPaint(HWND hWnd)
     draw.hdc = hdc;
     draw.info = &data->draw_info;
     draw.pos.y = -1;
-    draw.cur_pos = { (SHORT) tsm_screen_get_cursor_x(data->screen), (SHORT) tsm_screen_get_cursor_y(data->screen) };
+    draw.cur_pos = { (SHORT) tsm_screen_get_cursor_x(data->screen), (SHORT) (tsm_screen_get_cursor_y(data->screen) + tsm_screen_sb_depth(data->screen)) };
     draw.flags = tsm_screen_get_flags(data->screen);
     tsm_age_t age = tsm_screen_draw(data->screen, tsm_screen_draw, (void*) &draw);
     Flush(&draw);
@@ -567,6 +595,8 @@ void RadTerminalWindowOnKeyDown(HWND hWnd, UINT vk, BOOL fDown, int cRepeat, UIN
     case VK_ESCAPE: bPassOn = ActionClearSelection(hWnd) < 0; break;
     case VK_RETURN: bPassOn = ActionCopyToClipboard(hWnd) < 0; break;
     case 'V': if (KeyState[VK_CONTROL] & 0x80) bPassOn = ActionPasteFromClipboard(hWnd) < 0; break;
+    case VK_UP: if (KeyState[VK_CONTROL] & 0x80) bPassOn = ActionScrollbackUp(hWnd) < 0; break;
+    case VK_DOWN: if (KeyState[VK_CONTROL] & 0x80) bPassOn = ActionScrollbackDown(hWnd) < 0; break;
     }
 
     if (bPassOn)
@@ -743,6 +773,8 @@ void RadTerminalWindowOnKeyDown(HWND hWnd, UINT vk, BOOL fDown, int cRepeat, UIN
         }
 
         tsm_screen_selection_reset(data->screen);
+        if (ascii != 0 || unicode != 0)
+            tsm_screen_sb_reset(data->screen);
         bool b = tsm_vte_handle_keyboard(data->vte, keysym, ascii, mods, unicode);
         InvalidateRect(hWnd, nullptr, TRUE);
     }
