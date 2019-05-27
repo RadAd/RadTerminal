@@ -34,6 +34,7 @@
 #endif
 
 #define PROJ_NAME TEXT("RadTerminal")
+#define PROJ_CODE TEXT("RadTerminal")
 
 template <class T>
 bool MemEqual(const T& a, const T& b)
@@ -72,38 +73,31 @@ LRESULT CALLBACK RadTerminalWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 struct RadTerminalCreate
 {
     int iFontHeight;
-    LPTSTR strFontFace;
-    LPTSTR strScheme;
+    std::tstring strFontFace;
+    std::tstring strScheme;
     COORD szCon;
     int sb;
     std::tstring strCmd;
 };
 
-int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE, PTSTR pCmdLine, int nCmdShow)
+void LoadRegistry(RadTerminalCreate& rtc)
 {
-    HWND hWnd = NULL;
+    HKEY hKey = NULL;
+    if (RegOpenKey(HKEY_CURRENT_USER, _T("Software\\RadSoft\\" PROJ_CODE), &hKey) == ERROR_SUCCESS)
+    {
+        rtc.iFontHeight = RegGetDWORD(hKey, _T("FontSize"), rtc.iFontHeight);
+        rtc.strFontFace = RegGetString(hKey, _T("FontFace"), rtc.strFontFace);
+        rtc.strScheme = RegGetString(hKey, _T("Scheme"), rtc.strScheme);
+        rtc.szCon.X = (SHORT) RegGetDWORD(hKey, _T("Width"), rtc.szCon.X);
+        rtc.szCon.Y = (SHORT) RegGetDWORD(hKey, _T("Height"), rtc.szCon.Y);
+        rtc.sb = RegGetDWORD(hKey, _T("Scrollback"), rtc.sb);
 
-    WNDCLASS wc = {};
+        RegCloseKey(hKey);
+    }
+}
 
-    wc.lpfnWndProc = RadTerminalWindowProc;
-    wc.hIcon = LoadIcon(NULL, IDI_APPLICATION);
-    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    //wc.hbrBackground = GetSysColorBrush(COLOR_WINDOW);
-    wc.hInstance = hInstance;
-    wc.lpszClassName = TEXT("RadTerminal");
-
-    ATOM atom = NULL;
-    CHECK(atom = RegisterClass(&wc), EXIT_FAILURE);
-
-    RadTerminalCreate rtc = {};
-    rtc.iFontHeight = 16;
-    rtc.strFontFace = _T("Consolas");
-    //rtc.strScheme = _T("solarized");
-    rtc.szCon = { 80, 25 };
-    rtc.sb = 1000;
-    //rtc.strCmd = _T("%COMSPEC%");
-    rtc.strCmd = _T("cmd");
-
+void ParseCommandLine(RadTerminalCreate& rtc)
+{
     bool command = false;
     for (int i = 1; i < __argc; ++i)
     {
@@ -131,6 +125,35 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE, PTSTR pCmdLine, int nCmdSho
             command = true;
         }
     }
+}
+
+int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE, PTSTR pCmdLine, int nCmdShow)
+{
+    HWND hWnd = NULL;
+
+    WNDCLASS wc = {};
+
+    wc.lpfnWndProc = RadTerminalWindowProc;
+    wc.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    //wc.hbrBackground = GetSysColorBrush(COLOR_WINDOW);
+    wc.hInstance = hInstance;
+    wc.lpszClassName = PROJ_CODE;
+
+    ATOM atom = NULL;
+    CHECK(atom = RegisterClass(&wc), EXIT_FAILURE);
+
+    RadTerminalCreate rtc = {};
+    rtc.iFontHeight = 16;
+    rtc.strFontFace = _T("Consolas");
+    //rtc.strScheme = _T("solarized");
+    rtc.szCon = { 80, 25 };
+    rtc.sb = 1000;
+    //rtc.strCmd = _T("%COMSPEC%");
+    rtc.strCmd = _T("cmd");
+
+    LoadRegistry(rtc);
+    ParseCommandLine(rtc);
 
     HWND hChildWnd = CreateWindowEx(
         0,
@@ -560,21 +583,21 @@ BOOL RadTerminalWindowOnCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct)
         tsm_screen_set_max_sb(data->screen, rtc->sb);
     e = tsm_vte_new(&data->vte, data->screen, tsm_vte_write, data->spd.hInput, tsm_log, nullptr);
     tsm_vte_set_osc_cb(data->vte, tsm_vte_osc, hWnd);
-    if (rtc->strScheme != nullptr)
+    if (!rtc->strScheme.empty())
     {
 #ifdef _UNICODE
         char scheme[1024];
-        WideCharToMultiByte(CP_UTF8, 0, rtc->strScheme, -1, scheme, ARRAYSIZE(scheme), nullptr, nullptr);
+        WideCharToMultiByte(CP_UTF8, 0, rtc->strScheme.c_str(), -1, scheme, ARRAYSIZE(scheme), nullptr, nullptr);
         e = tsm_vte_set_palette(data->vte, scheme);
 #else
-        e = tsm_vte_set_palette(data->vte, rtc->strScheme);
+        e = tsm_vte_set_palette(data->vte, rtc->strScheme.c_str());
 #endif
     }
 
     for (int b = 0; b < 2; ++b)
         for (int i = 0; i < 2; ++i)
             for (int u = 0; u < 2; ++u)
-                CHECK(data->draw_info.hFonts[b][i][u] = CreateFont(rtc->strFontFace, rtc->iFontHeight, b == 0 ? FW_NORMAL : FW_BOLD, i, u), FALSE);
+                CHECK(data->draw_info.hFonts[b][i][u] = CreateFont(rtc->strFontFace.c_str(), rtc->iFontHeight, b == 0 ? FW_NORMAL : FW_BOLD, i, u), FALSE);
 
     HDC hdc = GetDC(hWnd);
     SelectFont(hdc, data->draw_info.hFonts[0][0][0]);
