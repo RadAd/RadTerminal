@@ -181,6 +181,33 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE, PTSTR pCmdLine, int nCmdSho
     return EXIT_SUCCESS;
 }
 
+struct WatchData
+{
+    HANDLE h;
+    HWND w;
+};
+
+#define WM_WATCH (WM_USER + 5)
+
+DWORD WINAPI WatchThread(LPVOID lpParameter)
+{
+    const WatchData* wd = (WatchData*) lpParameter;
+    do
+    {
+        WaitForSingleObject(wd->h, INFINITE);
+    } while (SendMessage(wd->w, WM_WATCH, (WPARAM) wd->h, 0) != 0);
+    delete wd;
+    return 0;
+}
+
+void Watch(HANDLE h, HWND w)
+{
+    WatchData* wd = new WatchData;
+    wd->h = h;
+    wd->w = w;
+    CreateThread(nullptr, 0, WatchThread, wd, 0, nullptr);
+}
+
 void tsm_log(void *data,
     const char *file,
     int line,
@@ -592,6 +619,8 @@ BOOL RadTerminalWindowOnCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct)
         return FALSE;
     }
 
+    Watch(data->spd.pi.hProcess, hWnd);
+
     // TODO Report error
     int e = 0;
     e = tsm_screen_new(&data->screen, tsm_log, nullptr);
@@ -946,12 +975,6 @@ void RadTerminalWindowOnTimer(HWND hWnd, UINT id)
                 FixScrollbar(hWnd);
                 InvalidateRect(hWnd, nullptr, TRUE);
             }
-
-            DWORD exitcode = 0;
-            if (GetExitCodeProcess(data->spd.pi.hProcess, &exitcode) && exitcode != STILL_ACTIVE)
-            {
-                DestroyWindow(hWnd);
-            }
         }
         break;
 
@@ -1109,6 +1132,17 @@ LRESULT CALLBACK RadTerminalWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
         HANDLE_MSG(hWnd, WM_ACTIVATE, RadTerminalWindowOnActivate);
         HANDLE_MSG(hWnd, WM_VSCROLL, RadTerminalWindowOnVScroll);
         HANDLE_MSG(hWnd, WM_DROPFILES, RadTerminalWindowOnDropFiles);
+    case WM_WATCH:
+        {
+            const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
+            HANDLE h = (HANDLE) wParam;
+            if (h == data->spd.pi.hProcess)
+            {
+                DestroyWindow(hWnd);
+            }
+            return 0;
+        }
+        break;
         //HANDLE_MSG(hWnd, WM_CHAR, RadTerminalWindowOnChar);
     default: return DefWindowProc(hWnd, uMsg, wParam, lParam);
     }
