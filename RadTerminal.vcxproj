@@ -96,6 +96,7 @@
   <ItemGroup>
     <ClCompile Include="ProcessUtils.cpp" />
     <ClCompile Include="RadTerminal.cpp" />
+    <ClCompile Include="RadTerminalFrame.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="tsm.vcxproj">
@@ -104,7 +105,11 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ProcessUtils.h" />
+    <ClInclude Include="resource.h" />
     <ClInclude Include="WinUtils.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="RadTerminal.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

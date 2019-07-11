@@ -1,5 +1,18 @@
 #pragma once
 #include <windows.h>
+#include <string>
+
+#ifdef _UNICODE
+#define tstring wstring
+#else
+#define tstring string
+#endif
+
+/* void Cls_OnSizing(HWND hwnd, UINT edge, LPRECT prRect) */
+#define HANDLE_WM_SIZING(hwnd, wParam, lParam, fn) \
+    ((fn)((hwnd), (UINT)(wParam), (LPRECT)lParam), TRUE)
+#define FORWARD_WM_SIZING(hwnd, edge, prRect, fn) \
+    (void)(fn)((hwnd), WM_SIZING, (WPARAM)edge, (LPARAM)prRect)
 
 inline BOOL UnadjustWindowRect(
     LPRECT prc,
@@ -53,33 +66,33 @@ inline HFONT CreateFont(LPCTSTR pFontFace, int iFontHeight, int cWeight, BOOL bI
         DEFAULT_PITCH | FF_DONTCARE, pFontFace);
 }
 
-std::string RegGetString(HKEY hKey, LPCSTR sValue, const std::string& strDef)
+inline std::string RegGetString(HKEY hKey, LPCSTR sValue, const std::string& strDef)
 {
     CHAR buf[1024];
     DWORD len = (ARRAYSIZE(buf) - 1) * sizeof(CHAR);
     if (RegGetValueA(hKey, nullptr, sValue, RRF_RT_REG_SZ, nullptr, buf, &len) == ERROR_SUCCESS)
     {
-        buf[len / sizeof(CHAR)] = _T('\0');
+        buf[len / sizeof(CHAR)] = TEXT('\0');
         return buf;
     }
     else
         return strDef;
 }
 
-std::wstring RegGetString(HKEY hKey, LPCWSTR sValue, const std::wstring& strDef)
+inline std::tstring RegGetString(HKEY hKey, LPCWSTR sValue, const std::tstring& strDef)
 {
     WCHAR buf[1024];
     DWORD len = (ARRAYSIZE(buf) - 1) * sizeof(WCHAR);
     if (RegGetValueW(hKey, nullptr, sValue, RRF_RT_REG_SZ, nullptr, buf, &len) == ERROR_SUCCESS)
     {
-        buf[len / sizeof(WCHAR)] = _T('\0');
+        buf[len / sizeof(WCHAR)] = TEXT('\0');
         return buf;
     }
     else
         return strDef;
 }
 
-DWORD RegGetDWORD(HKEY hKey, LPCTSTR sValue, DWORD dwDef)
+inline DWORD RegGetDWORD(HKEY hKey, LPCTSTR sValue, DWORD dwDef)
 {
     DWORD data = 0;
     DWORD len = sizeof(data);
@@ -87,4 +100,27 @@ DWORD RegGetDWORD(HKEY hKey, LPCTSTR sValue, DWORD dwDef)
         return data;
     else
         return dwDef;
+}
+
+inline HWND GetMDIClient(HWND hWnd)
+{
+    return FindWindowEx(hWnd, NULL, TEXT("MDICLIENT"), nullptr);
+}
+
+inline HWND GetMDIActive(HWND hWndMDIClient, BOOL* pbMaximized = nullptr)
+{
+    return (HWND) SendMessage(hWndMDIClient, WM_MDIGETACTIVE, 0, (LPARAM) pbMaximized);
+}
+
+inline bool IsMDIChild(HWND hWnd)
+{
+    return (GetWindowExStyle(hWnd) & WS_EX_MDICHILD) != 0;
+}
+
+inline HWND MyGetActiveWnd(HWND hWnd)
+{
+    HWND hActive = GetActiveWindow();
+    if (hActive != NULL && IsMDIChild(hWnd))
+        hActive = GetMDIActive(GetParent(hWnd));
+    return hActive;
 }

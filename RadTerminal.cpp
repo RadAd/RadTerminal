@@ -6,6 +6,7 @@
 #include "WinUtils.h"
 #include "libtsm\src\tsm\libtsm.h"
 #include "libtsm\external\xkbcommon\xkbcommon-keysyms.h"
+#include "resource.h"
 
 // TODO
 // https://stackoverflow.com/questions/5966903/how-to-get-mousemove-and-mouseclick-in-bash
@@ -28,12 +29,6 @@
 // See https://docs.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences
 // Tabs in frame - see https://docs.microsoft.com/en-au/windows/desktop/dwm/customframe
 
-#ifdef _UNICODE
-#define tstring wstring
-#else
-#define tstring string
-#endif
-
 #define PROJ_NAME TEXT("RadTerminal")
 #define PROJ_CODE TEXT("RadTerminal")
 
@@ -53,23 +48,46 @@ void ShowError(HWND hWnd, LPCTSTR msg, HRESULT hr)
 #define CHECK(x, r) \
     if (!(x)) \
     { \
-        ShowError(hWnd, _T(#x), HRESULT_FROM_WIN32(GetLastError())); \
+        ShowError(hWnd, __FUNCTIONW__ TEXT(": ") TEXT(#x), HRESULT_FROM_WIN32(GetLastError())); \
         return (r); \
     }
 
 #define CHECK_ONLY(x) \
     if (!(x)) \
     { \
-        ShowError(hWnd, _T(#x), HRESULT_FROM_WIN32(GetLastError())); \
+        ShowError(hWnd, __FUNCTIONW__ TEXT(": ") TEXT(#x), HRESULT_FROM_WIN32(GetLastError())); \
     }
 
 #define VERIFY(x) \
     if (!(x)) \
     { \
-        ShowError(hWnd, _T(#x), 0); \
+        ShowError(hWnd, __FUNCTIONW__ TEXT(": ") TEXT(#x), 0); \
     }
 
+HWND CreateRadTerminalFrame(HINSTANCE hInstance, int nCmdShow);
 LRESULT CALLBACK RadTerminalWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+
+ATOM RegisterRadTerminal(HINSTANCE hInstance)
+{
+    WNDCLASS wc = {};
+
+    wc.lpfnWndProc = RadTerminalWindowProc;
+    wc.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    //wc.hbrBackground = GetSysColorBrush(COLOR_WINDOW);
+    wc.hInstance = hInstance;
+    wc.lpszClassName = PROJ_CODE;
+
+    return RegisterClass(&wc);
+}
+
+ATOM GetRadTerminalAtom(HINSTANCE hInstance)
+{
+    static ATOM g_atom = RegisterRadTerminal(hInstance);
+    return g_atom;
+}
+
+HWND ActionNewWindow(HWND hWnd, bool bParseCmdLine);
 
 struct RadTerminalCreate
 {
@@ -128,22 +146,8 @@ void ParseCommandLine(RadTerminalCreate& rtc)
     }
 }
 
-int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE, PTSTR pCmdLine, int nCmdShow)
+RadTerminalCreate GetDefaultTerminalCreate(bool bParseCmdLine)
 {
-    HWND hWnd = NULL;
-
-    WNDCLASS wc = {};
-
-    wc.lpfnWndProc = RadTerminalWindowProc;
-    wc.hIcon = LoadIcon(NULL, IDI_APPLICATION);
-    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    //wc.hbrBackground = GetSysColorBrush(COLOR_WINDOW);
-    wc.hInstance = hInstance;
-    wc.lpszClassName = PROJ_CODE;
-
-    ATOM atom = NULL;
-    CHECK(atom = RegisterClass(&wc), EXIT_FAILURE);
-
     RadTerminalCreate rtc = {};
     rtc.iFontHeight = 16;
     rtc.strFontFace = _T("Consolas");
@@ -154,28 +158,71 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE, PTSTR pCmdLine, int nCmdSho
     rtc.strCmd = _T("cmd");
 
     LoadRegistry(rtc);
-    ParseCommandLine(rtc);
+    if (bParseCmdLine)
+        ParseCommandLine(rtc);
 
-    HWND hChildWnd = CreateWindowEx(
-        WS_EX_ACCEPTFILES,
-        MAKEINTATOM(atom),
-        PROJ_NAME,
-        WS_OVERLAPPEDWINDOW | WS_VSCROLL,
-        CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-        NULL,       // Parent window
-        NULL,       // Menu
-        hInstance,
-        &rtc
-    );
-    CHECK(hChildWnd, EXIT_FAILURE);
+    return rtc;
+}
 
-    ShowWindow(hChildWnd, nCmdShow);
+int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE, PTSTR pCmdLine, int nCmdShow)
+{
+    HWND hWnd = NULL;
+    HWND hWndMDIClient = NULL;
+    HACCEL hAccel = NULL;
+    bool bMDI = true;
+
+    CHECK(GetRadTerminalAtom(hInstance), EXIT_FAILURE);
+
+    if (bMDI)
+    {
+        hWnd = CreateRadTerminalFrame(hInstance, nCmdShow);
+        CHECK(hWnd, EXIT_FAILURE);
+
+        hWndMDIClient = GetMDIClient(hWnd);
+        hAccel = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDR_ACCELERATOR1));
+
+        HWND hChildWnd = ActionNewWindow(hWnd, true);
+
+        if (true && hChildWnd != NULL)
+        {
+            RECT r = {};
+            GetWindowRect(hChildWnd, &r);
+            UnadjustWindowRectEx(&r, GetWindowStyle(hChildWnd), GetMenu(hChildWnd) != NULL, GetWindowExStyle(hChildWnd));
+            AdjustWindowRectEx(&r, GetWindowStyle(hWnd), GetMenu(hWnd) != NULL, GetWindowExStyle(hWnd));
+            CHECK(SetWindowPos(hWnd, 0, r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER), FALSE);
+            ShowWindow(hChildWnd, SW_MAXIMIZE);
+        }
+    }
+    else
+    {
+        RadTerminalCreate rtc = GetDefaultTerminalCreate(true);
+
+        hWnd = CreateWindowEx(
+            WS_EX_ACCEPTFILES,
+            MAKEINTATOM(GetRadTerminalAtom(hInstance)),
+            PROJ_NAME,
+            WS_OVERLAPPEDWINDOW | WS_VSCROLL,
+            CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+            NULL,       // Parent window
+            NULL,       // Menu
+            hInstance,
+            &rtc
+        );
+        CHECK(hWnd, EXIT_FAILURE);
+
+        ShowWindow(hWnd, nCmdShow);
+    }
+
 
     MSG msg = {};
-    while (GetMessage(&msg, NULL, 0, 0))
+    while (GetMessage(&msg, (HWND) NULL, 0, 0))
     {
-        TranslateMessage(&msg);
-        DispatchMessage(&msg);
+        if (!TranslateMDISysAccel(hWndMDIClient, &msg) &&
+            !TranslateAccelerator(hWnd, hAccel, &msg))
+        {
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
+        }
     }
 
     return EXIT_SUCCESS;
@@ -252,18 +299,18 @@ struct tsm_screen_draw_data
     tsm_screen_draw_state state;
 };
 
-SIZE GetCellSize(const tsm_screen_draw_info* di)
+inline SIZE GetCellSize(const tsm_screen_draw_info* di)
 {
     return { di->tm.tmAveCharWidth, di->tm.tmHeight };
 }
 
-POINT GetScreenPos(const tsm_screen_draw_info* di, COORD pos)
+inline POINT GetScreenPos(const tsm_screen_draw_info* di, COORD pos)
 {
     SIZE sz = GetCellSize(di);
     return { pos.X * sz.cx, pos.Y * sz.cy };
 }
 
-COORD GetCellPos(const tsm_screen_draw_info* di, POINT pos)
+inline COORD GetCellPos(const tsm_screen_draw_info* di, POINT pos)
 {
     SIZE sz = GetCellSize(di);
     return { (SHORT) (pos.x / sz.cx), (SHORT) (pos.y / sz.cy) };
@@ -477,6 +524,43 @@ BOOL CheckScrollBar(HWND hWnd)
     return GetScrollPos(hWnd, SB_VERT) == nPos;
 }
 
+// trim empty space from end of lines
+void TrimLines(char* buf, int* plen)
+{
+    char* lastnonnull = nullptr;
+    for (int i = 0; i < *plen; ++i)
+    {
+        switch (buf[i])
+        {
+        case ' ':
+        case '\0':
+            //buf[i] = ' ';
+            break;
+
+        case '\n':
+            if (lastnonnull != nullptr)
+            {
+                strncpy_s(lastnonnull, *plen - (lastnonnull - buf), buf + i, *plen - i);  // TODO len should be *plen - (lastnonnull - buf) I think
+                int cut = (int) ((buf + i) - lastnonnull);
+                *plen -= cut;
+                i -= cut;
+            }
+            // fallthrough
+
+        default:
+            lastnonnull = buf + i + 1;
+            break;
+        }
+    }
+
+    if (lastnonnull != nullptr)
+    {
+        *lastnonnull = '\0';
+        int cut = (int) ((buf + *plen) - lastnonnull);
+        *plen -= cut;
+    }
+}
+
 int ActionCopyToClipboard(HWND hWnd)
 {
     const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
@@ -484,40 +568,7 @@ int ActionCopyToClipboard(HWND hWnd)
     int len = tsm_screen_selection_copy(data->screen, &buf);
     if (len > 0)
     {
-        {   // trim empty space from end of lines
-            char* lastnonnull = nullptr;
-            for (int i = 0; i < len; ++i)
-            {
-                switch (buf[i])
-                {
-                case ' ':
-                case '\0':
-                    //buf[i] = ' ';
-                    break;
-
-                case '\n':
-                    if (lastnonnull != nullptr)
-                    {
-                        strncpy_s(lastnonnull, len - (lastnonnull - buf), buf + i, len - i);  // TODO len should be len - (lastnonnull - buf) I think
-                        int cut = (int) ((buf + i) - lastnonnull);
-                        len -= cut;
-                        i -= cut;
-                    }
-                    // fallthrough
-
-                default:
-                    lastnonnull = buf + i + 1;
-                    break;
-                }
-            }
-
-            if (lastnonnull != nullptr)
-            {
-                *lastnonnull = '\0';
-                int cut = (int) ((buf + len) - lastnonnull);
-                len -= cut;
-            }
-        }
+        TrimLines(buf, &len);
 
         HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, len + 1);
         memcpy(GlobalLock(hMem), buf, len + 1);
@@ -604,9 +655,46 @@ int ActionScrollbackDown(HWND hWnd)
     return 0;
 }
 
+HWND ActionNewWindow(HWND hWnd, bool bParseCmdLine)
+{
+    const HINSTANCE hInstance = GetWindowInstance(hWnd);
+    const HWND hWndMDIClient = GetMDIClient(hWnd);
+    BOOL bMaximized = FALSE;
+    GetMDIActive(hWndMDIClient, &bMaximized);
+
+    const RadTerminalCreate rtc = GetDefaultTerminalCreate(bParseCmdLine);
+
+    HWND hChildWnd = CreateMDIWindow(
+        MAKEINTATOM(GetRadTerminalAtom(hInstance)),
+        PROJ_NAME,
+        (bMaximized ? WS_MAXIMIZE : 0) | WS_OVERLAPPEDWINDOW | WS_VSCROLL,
+        CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+        hWndMDIClient,       // Parent window
+        hInstance,
+        (LPARAM) &rtc
+    );
+    CHECK(hChildWnd != NULL, NULL);
+
+    SetWindowLong(hChildWnd, GWL_EXSTYLE, GetWindowExStyle(hChildWnd) | WS_EX_ACCEPTFILES);
+
+    ShowWindow(hChildWnd, SW_SHOW);
+    return hChildWnd;
+}
+
+inline LRESULT MyDefWindowProc(_In_ HWND hWnd, _In_ UINT Msg, _In_ WPARAM wParam, _In_ LPARAM lParam)
+{
+    if (IsMDIChild(hWnd))
+        return DefMDIChildProc(hWnd, Msg, wParam, lParam);
+    else
+        return DefWindowProc(hWnd, Msg, wParam, lParam);
+}
+
 BOOL RadTerminalWindowOnCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct)
 {
-    const RadTerminalCreate* const rtc = (RadTerminalCreate*) lpCreateStruct->lpCreateParams;
+    FORWARD_WM_CREATE(hWnd, lpCreateStruct, MyDefWindowProc);
+
+    MDICREATESTRUCT* mdics = (MDICREATESTRUCT*) lpCreateStruct->lpCreateParams;
+    const RadTerminalCreate* const rtc = IsMDIChild(hWnd) ? (RadTerminalCreate*) mdics->lParam : (RadTerminalCreate*) lpCreateStruct->lpCreateParams;
 
     RadTerminalData* const data = new RadTerminalData;
     ZeroMemory(data, sizeof(RadTerminalData));
@@ -656,7 +744,7 @@ BOOL RadTerminalWindowOnCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct)
     const DWORD exstyle = GetWindowExStyle(hWnd);
     if (style & WS_VSCROLL)
         r.right += GetSystemMetrics(SM_CXVSCROLL);
-    CHECK(AdjustWindowRectEx(&r, style, FALSE, exstyle), FALSE);
+    CHECK(AdjustWindowRectEx(&r, style, GetMenu(hWnd) != NULL, exstyle), FALSE);
     CHECK(SetWindowPos(hWnd, 0, r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER), FALSE);
 
     HICON hIconLarge = NULL, hIconSmall = NULL;
@@ -675,6 +763,7 @@ BOOL RadTerminalWindowOnCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct)
 
 void RadTerminalWindowOnDestroy(HWND hWnd)
 {
+    FORWARD_WM_DESTROY(hWnd, MyDefWindowProc);
     const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
 
     CleanupSubProcess(&data->spd);
@@ -689,7 +778,8 @@ void RadTerminalWindowOnDestroy(HWND hWnd)
 
     delete data;
     SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG_PTR) nullptr);
-    PostQuitMessage(0);
+    if (!IsMDIChild(hWnd))
+        PostQuitMessage(0);
 }
 
 void RadTerminalWindowOnPaint(HWND hWnd)
@@ -711,7 +801,7 @@ void RadTerminalWindowOnPaint(HWND hWnd)
     tsm_age_t age = tsm_screen_draw(data->screen, tsm_screen_draw, (void*) &draw);
     Flush(&draw);
 
-    HWND hActive = GetActiveWindow();
+    HWND hActive = MyGetActiveWnd(hWnd);
     if (hActive == hWnd)
         DrawCursor(hdc, data);
 
@@ -720,6 +810,7 @@ void RadTerminalWindowOnPaint(HWND hWnd)
 
 void RadTerminalWindowOnKeyDown(HWND hWnd, UINT vk, BOOL fDown, int cRepeat, UINT flags)
 {
+    FORWARD_WM_KEYDOWN(hWnd, vk, cRepeat, flags, MyDefWindowProc);
     const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
     BYTE KeyState[256];
     GetKeyboardState(KeyState);
@@ -915,19 +1006,20 @@ void RadTerminalWindowOnKeyDown(HWND hWnd, UINT vk, BOOL fDown, int cRepeat, UIN
         InvalidateRect(hWnd, nullptr, TRUE);
     }
 
-    FORWARD_WM_KEYDOWN(hWnd, vk, cRepeat, flags, DefWindowProc);
+    FORWARD_WM_KEYDOWN(hWnd, vk, cRepeat, flags, MyDefWindowProc);
 }
 
 int RadTerminalWindowOnMouseActivate(HWND hWnd, HWND hwndTopLevel, UINT codeHitTest, UINT msg)
 {
-    int result = FORWARD_WM_MOUSEACTIVATE(hWnd, hwndTopLevel, codeHitTest, msg, DefWindowProc);
-    if (result == MA_ACTIVATE)
+    int result = FORWARD_WM_MOUSEACTIVATE(hWnd, hwndTopLevel, codeHitTest, msg, MyDefWindowProc);
+    if (result == MA_ACTIVATE && codeHitTest == HTCLIENT)
         return MA_ACTIVATEANDEAT;
     return result;
 }
 
 void RadTerminalWindowOnMouseMove(HWND hWnd, int x, int y, UINT keyFlags)
 {
+    FORWARD_WM_MOUSEMOVE(hWnd, x, y, keyFlags, MyDefWindowProc);
     const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
     if (GetCapture() == hWnd)
     {
@@ -939,8 +1031,9 @@ void RadTerminalWindowOnMouseMove(HWND hWnd, int x, int y, UINT keyFlags)
 
 void RadTerminalWindowOnLButtonDown(HWND hWnd, BOOL fDoubleClick, int x, int y, UINT keyFlags)
 {
+    FORWARD_WM_LBUTTONDOWN(hWnd, fDoubleClick, x, y, keyFlags, MyDefWindowProc);
     const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
-    if (GetActiveWindow() == hWnd)
+    if (MyGetActiveWnd(hWnd) == hWnd)
     {
         // TODO Handle fDoubleClick to select word
         SetCapture(hWnd);
@@ -952,6 +1045,7 @@ void RadTerminalWindowOnLButtonDown(HWND hWnd, BOOL fDoubleClick, int x, int y, 
 
 void RadTerminalWindowOnLButtonUp(HWND hWnd, int x, int y, UINT keyFlags)
 {
+    FORWARD_WM_LBUTTONUP(hWnd, x, y, keyFlags, MyDefWindowProc);
     const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
     if (GetCapture() == hWnd)
         ReleaseCapture();
@@ -959,6 +1053,7 @@ void RadTerminalWindowOnLButtonUp(HWND hWnd, int x, int y, UINT keyFlags)
 
 void RadTerminalWindowOnRButtonDown(HWND hWnd, BOOL fDoubleClick, int x, int y, UINT keyFlags)
 {
+    FORWARD_WM_RBUTTONDOWN(hWnd, fDoubleClick, x, y, keyFlags, MyDefWindowProc);
     if (ActionCopyToClipboard(hWnd) < 0)
         ActionPasteFromClipboard(hWnd);
 }
@@ -980,7 +1075,7 @@ void RadTerminalWindowOnTimer(HWND hWnd, UINT id)
 
     case 2:
         {
-            HWND hActive = GetActiveWindow();
+            HWND hActive = MyGetActiveWnd(hWnd);
             if (hActive == hWnd)
             {
                 HDC hdc = GetDC(hWnd);
@@ -1004,14 +1099,17 @@ void RadTerminalWindowOnSize(HWND hWnd, UINT state, int cx, int cy)
 
         FixScrollbar(hWnd);
     }
+    FORWARD_WM_SIZE(hWnd, state, cx, cy, MyDefWindowProc);
 }
 
 void RadTerminalWindowOnSizing(HWND hWnd, UINT edge, LPRECT prRect)
 {
+    FORWARD_WM_SIZING(hWnd, edge, prRect, MyDefWindowProc);
     const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
     const DWORD style = GetWindowStyle(hWnd);
     const DWORD exstyle = GetWindowExStyle(hWnd);
-    CHECK_ONLY(UnadjustWindowRectEx(prRect, style, FALSE, exstyle));
+    const BOOL fMenu = GetMenu(hWnd) != NULL;
+    CHECK_ONLY(UnadjustWindowRectEx(prRect, style, fMenu, exstyle));
     if (style & WS_VSCROLL)
         prRect->right -= GetSystemMetrics(SM_CXVSCROLL);
     SIZE sz = GetCellSize(&data->draw_info);
@@ -1041,18 +1139,13 @@ void RadTerminalWindowOnSizing(HWND hWnd, UINT edge, LPRECT prRect)
 
     if (style & WS_VSCROLL)
         prRect->right += GetSystemMetrics(SM_CXVSCROLL);
-    CHECK_ONLY(AdjustWindowRectEx(prRect, style, FALSE, exstyle));
+    CHECK_ONLY(AdjustWindowRectEx(prRect, style, fMenu, exstyle));
     //prRect->right += 100;
-}
-
-void RadTerminalWindowOnActivate(HWND hWnd, UINT state, HWND hwndActDeact, BOOL fMinimized)
-{
-    if (state == WA_INACTIVE)
-        InvalidateRect(hWnd, nullptr, TRUE);
 }
 
 void RadTerminalWindowOnVScroll(HWND hWnd, HWND hWndCtl, UINT code, int pos)
 {
+    FORWARD_WM_VSCROLL(hWnd, hWndCtl, code, pos, MyDefWindowProc);
     const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
     const int op = GetScrollPos(hWnd, SB_VERT);
     int d = 0;
@@ -1109,12 +1202,18 @@ void RadTerminalWindowOnDropFiles(HWND hWnd, HDROP hDrop)
     DragFinish(hDrop);
 }
 
-/* void Cls_OnSizing(HWND hwnd, UINT edge, LPRECT prRect) */
-#define HANDLE_WM_SIZING(hwnd, wParam, lParam, fn) \
-    ((fn)((hwnd), (UINT)(wParam), (LPRECT)lParam), TRUE)
+void RadTerminalWindowOnCommand(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
+{
+    switch (id)
+    {
+    case ID_FILE_CLOSE: PostMessage(hWnd, WM_CLOSE, 0, 0);  break;
+    default: FORWARD_WM_COMMAND(hWnd, id, hWndCtl, codeNotify, MyDefWindowProc); break;
+    }
+}
 
 LRESULT CALLBACK RadTerminalWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
+    //return MyDefWindowProc(hWnd, uMsg, wParam, lParam);
     switch (uMsg)
     {
         HANDLE_MSG(hWnd, WM_CREATE, RadTerminalWindowOnCreate);
@@ -1129,21 +1228,20 @@ LRESULT CALLBACK RadTerminalWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
         HANDLE_MSG(hWnd, WM_TIMER, RadTerminalWindowOnTimer);
         HANDLE_MSG(hWnd, WM_SIZE, RadTerminalWindowOnSize);
         HANDLE_MSG(hWnd, WM_SIZING, RadTerminalWindowOnSizing);
-        HANDLE_MSG(hWnd, WM_ACTIVATE, RadTerminalWindowOnActivate);
         HANDLE_MSG(hWnd, WM_VSCROLL, RadTerminalWindowOnVScroll);
         HANDLE_MSG(hWnd, WM_DROPFILES, RadTerminalWindowOnDropFiles);
+        HANDLE_MSG(hWnd, WM_COMMAND, RadTerminalWindowOnCommand);
     case WM_WATCH:
         {
             const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
             HANDLE h = (HANDLE) wParam;
             if (h == data->spd.pi.hProcess)
             {
-                DestroyWindow(hWnd);
+                PostMessage(hWnd, WM_CLOSE, 0, 0);
             }
             return 0;
         }
         break;
-        //HANDLE_MSG(hWnd, WM_CHAR, RadTerminalWindowOnChar);
-    default: return DefWindowProc(hWnd, uMsg, wParam, lParam);
+    default: return MyDefWindowProc(hWnd, uMsg, wParam, lParam);
     }
 }
