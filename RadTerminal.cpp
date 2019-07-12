@@ -186,11 +186,11 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE, PTSTR pCmdLine, int nCmdSho
         if (true && hChildWnd != NULL)
         {
             RECT r = {};
-            GetWindowRect(hChildWnd, &r);
-            UnadjustWindowRectEx(&r, GetWindowStyle(hChildWnd), GetMenu(hChildWnd) != NULL, GetWindowExStyle(hChildWnd));
-            AdjustWindowRectEx(&r, GetWindowStyle(hWnd), GetMenu(hWnd) != NULL, GetWindowExStyle(hWnd));
-            CHECK(SetWindowPos(hWnd, 0, r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER), FALSE);
-            ShowWindow(hChildWnd, SW_MAXIMIZE);
+            CHECK(GetWindowRect(hChildWnd, &r), EXIT_FAILURE);
+            CHECK(UnadjustWindowRectEx(&r, GetWindowStyle(hChildWnd), GetMenu(hChildWnd) != NULL, GetWindowExStyle(hChildWnd)), EXIT_FAILURE);
+            CHECK(AdjustWindowRectEx(&r, GetWindowStyle(hWnd), GetMenu(hWnd) != NULL, GetWindowExStyle(hWnd)), EXIT_FAILURE);
+            CHECK(SetWindowPos(hWnd, 0, r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER), EXIT_FAILURE);
+            CHECK(ShowWindow(hChildWnd, SW_MAXIMIZE), EXIT_FAILURE);
         }
     }
     else
@@ -210,7 +210,7 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE, PTSTR pCmdLine, int nCmdSho
         );
         CHECK(hWnd, EXIT_FAILURE);
 
-        ShowWindow(hWnd, nCmdShow);
+        CHECK(ShowWindow(hWnd, nCmdShow), EXIT_FAILURE);
     }
 
 
@@ -228,31 +228,60 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE, PTSTR pCmdLine, int nCmdSho
     return EXIT_SUCCESS;
 }
 
-struct WatchData
+template<class T, class U>
+struct ThreadData2
 {
-    HANDLE h;
-    HWND w;
+    typedef void HandleFunc(T hHandle, U hWnd);
+    HandleFunc* pFunc;
+    T t;
+    U u;
+
+    void Do() const
+    {
+        pFunc(t, u);
+    }
 };
 
-#define WM_WATCH (WM_USER + 5)
-
-DWORD WINAPI WatchThread(LPVOID lpParameter)
+template<class T>
+DWORD WINAPI MyThread(LPVOID lpParameter)
 {
-    const WatchData* wd = (WatchData*) lpParameter;
-    do
-    {
-        WaitForSingleObject(wd->h, INFINITE);
-    } while (SendMessage(wd->w, WM_WATCH, (WPARAM) wd->h, 0) != 0);
-    delete wd;
+    const T* htd = (T*) lpParameter;
+    htd->Do();
+    delete htd;
     return 0;
 }
 
-void Watch(HANDLE h, HWND w)
+template<class T, class U>
+void CreateThread(void (*pFunc)(T, U), T t, U u)
 {
-    WatchData* wd = new WatchData;
-    wd->h = h;
-    wd->w = w;
-    CreateThread(nullptr, 0, WatchThread, wd, 0, nullptr);
+    ThreadData2<T, U>* htd = new ThreadData2<T, U>;
+    htd->pFunc = pFunc;
+    htd->t = t;
+    htd->u = u;
+    CreateThread(nullptr, 0, MyThread<ThreadData2<T, U>>, htd, 0, nullptr);
+}
+
+#define WM_WATCH (WM_USER + 5)
+void WatchThread(HANDLE hHandle, HWND hWnd)
+{
+    do
+    {
+        WaitForSingleObject(hHandle, INFINITE);
+    } while (SendMessage(hWnd, WM_WATCH, (WPARAM) hHandle, 0) != 0);
+}
+
+#define WM_READ (WM_USER + 7)
+void ReadThread(HANDLE hHandle, HWND hWnd)
+{
+    while (true)
+    {
+        char buf[1024];
+        const DWORD toread = ARRAYSIZE(buf);
+        DWORD read = 0;
+        if (!ReadFile(hHandle, buf, toread, &read, nullptr))
+            break;
+        SendMessage(hWnd, WM_READ, (WPARAM) buf, read);
+    }
 }
 
 void tsm_log(void *data,
@@ -438,26 +467,6 @@ void tsm_vte_paste(struct tsm_vte *vte,
         tsm_vte_handle_keyboard(vte, keysym, ascii, mods, unicode);
         ++lptstr;
     }
-}
-
-bool tsm_vte_read(struct tsm_vte *vte, HANDLE hOutput)
-{
-    DWORD avail = 0;
-    if (PeekNamedPipe(hOutput, nullptr, 0, nullptr, &avail, nullptr) && avail > 0)
-    {
-        while (avail > 0)
-        {
-            char buf[1024];
-            const DWORD toread = (avail> ARRAYSIZE(buf)) ? ARRAYSIZE(buf) : avail;
-            DWORD read = 0;
-            ReadFile(hOutput, buf, toread, &read, nullptr);
-            tsm_vte_input(vte, buf, read);
-            avail -= read;
-        }
-        return true;
-    }
-    else
-        return false;
 }
 
 void tsm_vte_osc(struct tsm_vte *vte,
@@ -707,7 +716,8 @@ BOOL RadTerminalWindowOnCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct)
         return FALSE;
     }
 
-    Watch(data->spd.pi.hProcess, hWnd);
+    CreateThread(WatchThread, data->spd.pi.hProcess, hWnd);
+    CreateThread(ReadThread, data->spd.hOutput, hWnd);
 
     // TODO Report error
     int e = 0;
@@ -755,7 +765,6 @@ BOOL RadTerminalWindowOnCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct)
         SendMessage(hWnd, WM_SETICON, ICON_SMALL, (LPARAM) hIconSmall);
     }
 
-    CHECK(SetTimer(hWnd, 1, 10, nullptr), FALSE);
     CHECK(SetTimer(hWnd, 2, 500, nullptr), FALSE);
 
     return TRUE;
@@ -1063,16 +1072,6 @@ void RadTerminalWindowOnTimer(HWND hWnd, UINT id)
     const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
     switch (id)
     {
-    case 1:
-        {
-            if (tsm_vte_read(data->vte, data->spd.hOutput))
-            {
-                FixScrollbar(hWnd);
-                InvalidateRect(hWnd, nullptr, TRUE);
-            }
-        }
-        break;
-
     case 2:
         {
             HWND hActive = MyGetActiveWnd(hWnd);
@@ -1239,6 +1238,17 @@ LRESULT CALLBACK RadTerminalWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
             {
                 PostMessage(hWnd, WM_CLOSE, 0, 0);
             }
+            return 0;
+        }
+        break;
+    case WM_READ:
+        {
+            const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
+            const char* buf = (const char*) wParam;
+            DWORD len = (DWORD) lParam;
+            tsm_vte_input(data->vte, buf, len);
+            FixScrollbar(hWnd);
+            InvalidateRect(hWnd, nullptr, TRUE);
             return 0;
         }
         break;
