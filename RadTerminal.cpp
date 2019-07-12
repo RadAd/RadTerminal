@@ -72,7 +72,7 @@ ATOM RegisterRadTerminal(HINSTANCE hInstance)
     WNDCLASS wc = {};
 
     wc.lpfnWndProc = RadTerminalWindowProc;
-    wc.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+    wc.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_ICON1));
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
     //wc.hbrBackground = GetSysColorBrush(COLOR_WINDOW);
     wc.hInstance = hInstance;
@@ -282,6 +282,7 @@ void ReadThread(HANDLE hHandle, HWND hWnd)
             break;
         SendMessage(hWnd, WM_READ, (WPARAM) buf, read);
     }
+    CloseHandle(hHandle);
 }
 
 void tsm_log(void *data,
@@ -718,6 +719,7 @@ BOOL RadTerminalWindowOnCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct)
 
     CreateThread(WatchThread, data->spd.pi.hProcess, hWnd);
     CreateThread(ReadThread, data->spd.hOutput, hWnd);
+    data->spd.hOutput = NULL;
 
     // TODO Report error
     int e = 0;

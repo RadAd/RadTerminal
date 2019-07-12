@@ -13,7 +13,7 @@ HWND CreateRadTerminalFrame(HINSTANCE hInstance, int nCmdShow)
     WNDCLASS wcMDIFrame = {};
 
     wcMDIFrame.lpfnWndProc = RadTerminalMDIFrameProc;
-    wcMDIFrame.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+    wcMDIFrame.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_ICON1));
     wcMDIFrame.hCursor = LoadCursor(NULL, IDC_ARROW);
     //wcMDIFrame.hbrBackground = GetSysColorBrush(COLOR_WINDOW);
     wcMDIFrame.hInstance = hInstance;
