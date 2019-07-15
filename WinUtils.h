@@ -79,11 +79,37 @@ inline std::string RegGetString(HKEY hKey, LPCSTR sValue, const std::string& str
         return strDef;
 }
 
+inline std::string RegGetString(HKEY hKey, LPCSTR sSubKey, LPCSTR sValue, const std::string& strDef)
+{
+    CHAR buf[1024];
+    DWORD len = (ARRAYSIZE(buf) - 1) * sizeof(CHAR);
+    if (RegGetValueA(hKey, sSubKey, sValue, RRF_RT_REG_SZ, nullptr, buf, &len) == ERROR_SUCCESS)
+    {
+        buf[len / sizeof(CHAR)] = TEXT('\0');
+        return buf;
+    }
+    else
+        return strDef;
+}
+
 inline std::tstring RegGetString(HKEY hKey, LPCWSTR sValue, const std::tstring& strDef)
 {
     WCHAR buf[1024];
     DWORD len = (ARRAYSIZE(buf) - 1) * sizeof(WCHAR);
     if (RegGetValueW(hKey, nullptr, sValue, RRF_RT_REG_SZ, nullptr, buf, &len) == ERROR_SUCCESS)
+    {
+        buf[len / sizeof(WCHAR)] = TEXT('\0');
+        return buf;
+    }
+    else
+        return strDef;
+}
+
+inline std::tstring RegGetString(HKEY hKey, LPCWSTR sSubKey, LPCWSTR sValue, const std::tstring& strDef)
+{
+    WCHAR buf[1024];
+    DWORD len = (ARRAYSIZE(buf) - 1) * sizeof(WCHAR);
+    if (RegGetValueW(hKey, sSubKey, sValue, RRF_RT_REG_SZ, nullptr, buf, &len) == ERROR_SUCCESS)
     {
         buf[len / sizeof(WCHAR)] = TEXT('\0');
         return buf;

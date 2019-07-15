@@ -97,22 +97,29 @@ struct RadTerminalCreate
     std::tstring strScheme;
     COORD szCon;
     int sb;
-    std::tstring strCmd;
+    std::tstring strCommand;
 };
 
-void LoadRegistry(RadTerminalCreate& rtc)
+void LoadRegistry(RadTerminalCreate& rtc, LPCWSTR strSubKey)
 {
-    HKEY hKey = NULL;
-    if (RegOpenKey(HKEY_CURRENT_USER, _T("Software\\RadSoft\\" PROJ_CODE), &hKey) == ERROR_SUCCESS)
+    HKEY hMainKey = NULL;
+    if (RegOpenKey(HKEY_CURRENT_USER, _T("Software\\RadSoft\\" PROJ_CODE "\\Profiles"), &hMainKey) == ERROR_SUCCESS)
     {
-        rtc.iFontHeight = RegGetDWORD(hKey, _T("FontSize"), rtc.iFontHeight);
-        rtc.strFontFace = RegGetString(hKey, _T("FontFace"), rtc.strFontFace);
-        rtc.strScheme = RegGetString(hKey, _T("Scheme"), rtc.strScheme);
-        rtc.szCon.X = (SHORT) RegGetDWORD(hKey, _T("Width"), rtc.szCon.X);
-        rtc.szCon.Y = (SHORT) RegGetDWORD(hKey, _T("Height"), rtc.szCon.Y);
-        rtc.sb = RegGetDWORD(hKey, _T("Scrollback"), rtc.sb);
+        HKEY hKey = NULL;
+        if (RegOpenKey(hMainKey, strSubKey, &hKey) == ERROR_SUCCESS)
+        {
+            rtc.iFontHeight = RegGetDWORD(hKey, _T("FontSize"), rtc.iFontHeight);
+            rtc.strFontFace = RegGetString(hKey, _T("FontFace"), rtc.strFontFace);
+            rtc.strScheme = RegGetString(hKey, _T("Scheme"), rtc.strScheme);
+            rtc.szCon.X = (SHORT) RegGetDWORD(hKey, _T("Width"), rtc.szCon.X);
+            rtc.szCon.Y = (SHORT) RegGetDWORD(hKey, _T("Height"), rtc.szCon.Y);
+            rtc.sb = RegGetDWORD(hKey, _T("Scrollback"), rtc.sb);
+            rtc.strCommand = RegGetString(hKey, _T("Command"), rtc.strCommand);
 
-        RegCloseKey(hKey);
+            RegCloseKey(hKey);
+        }
+
+        RegCloseKey(hMainKey);
     }
 }
 
@@ -124,8 +131,8 @@ void ParseCommandLine(RadTerminalCreate& rtc)
         LPCTSTR arg = __targv[i];
         if (command)
         {
-            rtc.strCmd += ' ';
-            rtc.strCmd += arg;
+            rtc.strCommand += ' ';
+            rtc.strCommand += arg;
         }
         else if (_tcsicmp(arg, _T("-w")) == 0)
             rtc.szCon.X = _tstoi(__targv[++i]);
@@ -141,7 +148,7 @@ void ParseCommandLine(RadTerminalCreate& rtc)
             rtc.sb = _tstoi(__targv[++i]);
         else
         {
-            rtc.strCmd = arg;
+            rtc.strCommand = arg;
             command = true;
         }
     }
@@ -149,6 +156,8 @@ void ParseCommandLine(RadTerminalCreate& rtc)
 
 RadTerminalCreate GetDefaultTerminalCreate(bool bParseCmdLine)
 {
+    std::tstring profile = RegGetString(HKEY_CURRENT_USER, _T("Software\\RadSoft\\" PROJ_CODE), _T("Profile"), _T("Cmd"));
+
     RadTerminalCreate rtc = {};
     rtc.iFontHeight = 16;
     rtc.strFontFace = _T("Consolas");
@@ -156,9 +165,10 @@ RadTerminalCreate GetDefaultTerminalCreate(bool bParseCmdLine)
     rtc.szCon = { 80, 25 };
     rtc.sb = 1000;
     //rtc.strCmd = _T("%COMSPEC%");
-    rtc.strCmd = _T("cmd");
+    //rtc.strCmd = _T("cmd");
 
-    LoadRegistry(rtc);
+    LoadRegistry(rtc, _T("Default"));
+    LoadRegistry(rtc, profile.c_str());
     if (bParseCmdLine)
         ParseCommandLine(rtc);
 
@@ -723,7 +733,7 @@ BOOL RadTerminalWindowOnCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct)
     ZeroMemory(data, sizeof(RadTerminalData));
     SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG_PTR) data);
 
-    data->spd = CreateSubProcess(rtc->strCmd.c_str(), rtc->szCon, true);
+    data->spd = CreateSubProcess(rtc->strCommand.c_str(), rtc->szCon, true);
     if (data->spd.hr != S_OK)
     {
         ShowError(hWnd, _T("CreateSubProcess"), data->spd.hr);
