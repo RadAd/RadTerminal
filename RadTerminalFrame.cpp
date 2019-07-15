@@ -8,7 +8,7 @@
 HWND ActionNewWindow(HWND hWnd, bool bParseCmdLine);
 LRESULT CALLBACK RadTerminalMDIFrameProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
-HWND CreateRadTerminalFrame(HINSTANCE hInstance, int nCmdShow)
+HWND CreateRadTerminalFrame(HINSTANCE hInstance)
 {
     WNDCLASS wcMDIFrame = {};
 
@@ -35,8 +35,6 @@ HWND CreateRadTerminalFrame(HINSTANCE hInstance, int nCmdShow)
     );
     if (hFrame == NULL)
         return NULL;
-
-    ShowWindow(hFrame, nCmdShow);
 
     return hFrame;
 }

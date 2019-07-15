@@ -4,6 +4,7 @@
 #include <string>
 #include "ProcessUtils.h"
 #include "WinUtils.h"
+#include "DarkMode.h"
 #include "libtsm\src\tsm\libtsm.h"
 #include "libtsm\external\xkbcommon\xkbcommon-keysyms.h"
 #include "resource.h"
@@ -64,8 +65,10 @@ void ShowError(HWND hWnd, LPCTSTR msg, HRESULT hr)
         ShowError(hWnd, __FUNCTIONW__ TEXT(": ") TEXT(#x), 0); \
     }
 
-HWND CreateRadTerminalFrame(HINSTANCE hInstance, int nCmdShow);
+HWND CreateRadTerminalFrame(HINSTANCE hInstance);
 LRESULT CALLBACK RadTerminalWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+
+HWND ActionNewWindow(HWND hWnd, bool bParseCmdLine);
 
 ATOM RegisterRadTerminal(HINSTANCE hInstance)
 {
@@ -86,8 +89,6 @@ ATOM GetRadTerminalAtom(HINSTANCE hInstance)
     static ATOM g_atom = RegisterRadTerminal(hInstance);
     return g_atom;
 }
-
-HWND ActionNewWindow(HWND hWnd, bool bParseCmdLine);
 
 struct RadTerminalCreate
 {
@@ -166,16 +167,18 @@ RadTerminalCreate GetDefaultTerminalCreate(bool bParseCmdLine)
 
 int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE, PTSTR pCmdLine, int nCmdShow)
 {
+    InitDarkMode();
+
     HWND hWnd = NULL;
     HWND hWndMDIClient = NULL;
     HACCEL hAccel = NULL;
-    bool bMDI = false;
+    bool bMDI = true;
 
     CHECK(GetRadTerminalAtom(hInstance), EXIT_FAILURE);
 
     if (bMDI)
     {
-        hWnd = CreateRadTerminalFrame(hInstance, nCmdShow);
+        hWnd = CreateRadTerminalFrame(hInstance);
         CHECK(hWnd, EXIT_FAILURE);
 
         hWndMDIClient = GetMDIClient(hWnd);
@@ -209,9 +212,16 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE, PTSTR pCmdLine, int nCmdSho
             &rtc
         );
         CHECK(hWnd, EXIT_FAILURE);
-
-        ShowWindow(hWnd, nCmdShow);
     }
+
+    if (g_darkModeEnabled)
+    {
+        SetWindowTheme(hWnd, L"DarkMode_Explorer", NULL);   // Needed for scrollbar
+        AllowDarkModeForWindow(hWnd, true);
+        RefreshTitleBarThemeColor(hWnd);
+    }
+
+    ShowWindow(hWnd, nCmdShow);
 
     MSG msg = {};
     while (GetMessage(&msg, (HWND) NULL, 0, 0))
@@ -294,9 +304,8 @@ void tsm_log(void *data,
     va_list args)
 {
     char buf[1024];
-    sprintf_s(buf, "tsm_log: %s:%d %s %s %d\n", strrchr(file, '\\'), line, func, subs, sev);
+    sprintf_s(buf, "tsm_log: %d %s:%d %s %s - ", sev, strrchr(file, '\\'), line, func, subs);
     OutputDebugStringA(buf);
-    OutputDebugStringA("tsm_log: ");
     vsprintf_s(buf, format, args);
     OutputDebugStringA(buf);
     OutputDebugStringA("\n");
@@ -685,8 +694,13 @@ HWND ActionNewWindow(HWND hWnd, bool bParseCmdLine)
     CHECK(hChildWnd != NULL, NULL);
 
     SetWindowLong(hChildWnd, GWL_EXSTYLE, GetWindowExStyle(hChildWnd) | WS_EX_ACCEPTFILES);
+    if (false && g_darkModeEnabled) // TODO Doesn't seem to work MDI child windows
+    {
+        SetWindowTheme(hWnd, L"DarkMode_Explorer", NULL);   // Needed for scrollbar
+        AllowDarkModeForWindow(hWnd, true);
+        RefreshTitleBarThemeColor(hWnd);
+    }
 
-    ShowWindow(hChildWnd, SW_SHOW);
     return hChildWnd;
 }
 
