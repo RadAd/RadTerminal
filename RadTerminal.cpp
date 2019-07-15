@@ -182,7 +182,7 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE, PTSTR pCmdLine, int nCmdSho
     HWND hWnd = NULL;
     HWND hWndMDIClient = NULL;
     HACCEL hAccel = NULL;
-    bool bMDI = true;
+    bool bMDI = RegGetDWORD(HKEY_CURRENT_USER, _T("Software\\RadSoft\\" PROJ_CODE), _T("MDI"), TRUE) > 0;
 
     CHECK(GetRadTerminalAtom(hInstance), EXIT_FAILURE);
 

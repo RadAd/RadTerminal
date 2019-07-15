@@ -128,6 +128,16 @@ inline DWORD RegGetDWORD(HKEY hKey, LPCTSTR sValue, DWORD dwDef)
         return dwDef;
 }
 
+inline DWORD RegGetDWORD(HKEY hKey, LPCTSTR sSubKey, LPCTSTR sValue, DWORD dwDef)
+{
+    DWORD data = 0;
+    DWORD len = sizeof(data);
+    if (RegGetValue(hKey, sSubKey, sValue, RRF_RT_REG_DWORD, nullptr, &data, &len) == ERROR_SUCCESS)
+        return data;
+    else
+        return dwDef;
+}
+
 inline HWND GetMDIClient(HWND hWnd)
 {
     return FindWindowEx(hWnd, NULL, TEXT("MDICLIENT"), nullptr);
