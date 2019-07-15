@@ -169,7 +169,7 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE, PTSTR pCmdLine, int nCmdSho
     HWND hWnd = NULL;
     HWND hWndMDIClient = NULL;
     HACCEL hAccel = NULL;
-    bool bMDI = true;
+    bool bMDI = false;
 
     CHECK(GetRadTerminalAtom(hInstance), EXIT_FAILURE);
 
@@ -190,7 +190,7 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE, PTSTR pCmdLine, int nCmdSho
             CHECK(UnadjustWindowRectEx(&r, GetWindowStyle(hChildWnd), GetMenu(hChildWnd) != NULL, GetWindowExStyle(hChildWnd)), EXIT_FAILURE);
             CHECK(AdjustWindowRectEx(&r, GetWindowStyle(hWnd), GetMenu(hWnd) != NULL, GetWindowExStyle(hWnd)), EXIT_FAILURE);
             CHECK(SetWindowPos(hWnd, 0, r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER), EXIT_FAILURE);
-            CHECK(ShowWindow(hChildWnd, SW_MAXIMIZE), EXIT_FAILURE);
+            ShowWindow(hChildWnd, SW_MAXIMIZE);
         }
     }
     else
@@ -210,9 +210,8 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE, PTSTR pCmdLine, int nCmdSho
         );
         CHECK(hWnd, EXIT_FAILURE);
 
-        CHECK(ShowWindow(hWnd, nCmdShow), EXIT_FAILURE);
+        ShowWindow(hWnd, nCmdShow);
     }
-
 
     MSG msg = {};
     while (GetMessage(&msg, (HWND) NULL, 0, 0))
@@ -1023,8 +1022,12 @@ void RadTerminalWindowOnKeyDown(HWND hWnd, UINT vk, BOOL fDown, int cRepeat, UIN
 int RadTerminalWindowOnMouseActivate(HWND hWnd, HWND hwndTopLevel, UINT codeHitTest, UINT msg)
 {
     int result = FORWARD_WM_MOUSEACTIVATE(hWnd, hwndTopLevel, codeHitTest, msg, MyDefWindowProc);
-    if (result == MA_ACTIVATE && codeHitTest == HTCLIENT)
+    static HWND s_hWnd = NULL;  // MDI Windows get a WM_MOUSE_ACTIVATE on every mouse click, not just the first to make it active
+    if (s_hWnd != hWnd && result == MA_ACTIVATE && codeHitTest == HTCLIENT)
+    {
+        s_hWnd = hWnd;
         return MA_ACTIVATEANDEAT;
+    }
     return result;
 }
 

@@ -59,6 +59,8 @@ BOOL RadTerminalFrameOnCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct)
     HWND hWndMDIClient = CreateWindow(TEXT("MDICLIENT"), (LPCTSTR) NULL,
         WS_CHILD | WS_CLIPCHILDREN | WS_VSCROLL | WS_HSCROLL,
         0, 0, 0, 0, hWnd, (HMENU) 0, hInst, (LPSTR) &ccs);
+    if (hWndMDIClient == NULL)
+        return FALSE;
 
     ShowWindow(hWndMDIClient, SW_SHOW);
 
