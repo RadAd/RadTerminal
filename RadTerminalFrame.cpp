@@ -6,6 +6,7 @@
 
 #define PROJ_NAME TEXT("RadTerminal")
 #define PROJ_CODE TEXT("RadTerminal")
+#define REG_BASE  TEXT("Software\\RadSoft\\") PROJ_CODE
 
 HWND ActionNewWindow(HWND hWnd, bool bParseCmdLine, const std::tstring& profile);
 LRESULT CALLBACK RadTerminalMDIFrameProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
@@ -66,9 +67,9 @@ BOOL RadTerminalFrameOnCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct)
 
     {
         HKEY hMainKey = NULL;
-        if (RegOpenKey(HKEY_CURRENT_USER, TEXT("Software\\RadSoft\\" PROJ_CODE "\\Profiles"), &hMainKey) == ERROR_SUCCESS)
+        if (RegOpenKey(HKEY_CURRENT_USER, REG_BASE TEXT("\\Profiles"), &hMainKey) == ERROR_SUCCESS)
         {
-            const std::tstring strDefault = RegGetString(HKEY_CURRENT_USER, TEXT("Software\\RadSoft\\" PROJ_CODE), TEXT("Profile"), TEXT("Cmd"));
+            const std::tstring strDefault = RegGetString(HKEY_CURRENT_USER, REG_BASE, TEXT("Profile"), TEXT("Cmd"));
             DWORD i = 0;
             std::tstring strName;
             for (int i = 0; RegEnumKeyEx(hMainKey, i, strName); ++i)

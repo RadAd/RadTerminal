@@ -202,3 +202,17 @@ inline bool FindMenuPos(HMENU hBaseMenu, UINT myID, HMENU* pMenu, int* mpos)
 
     return false;
 }
+
+inline BOOL CALLBACK CountChildWindowsProc(HWND, LPARAM lParam)
+{
+    int* pCount = (int*) lParam;
+    ++(*pCount);
+    return TRUE;
+}
+
+inline int CountChildWindows(HWND hWnd)
+{
+    int count = 0;
+    EnumChildWindows(hWnd, CountChildWindowsProc, (LPARAM) &count);
+    return count;
+}
