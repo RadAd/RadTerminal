@@ -138,6 +138,19 @@ inline DWORD RegGetDWORD(HKEY hKey, LPCTSTR sSubKey, LPCTSTR sValue, DWORD dwDef
         return dwDef;
 }
 
+inline bool RegEnumKeyEx(_In_ HKEY hKey, _In_ DWORD dwIndex, std::tstring& strName)
+{
+    TCHAR name[256];
+    DWORD len = ARRAYSIZE(name);
+    if (RegEnumKeyEx(hKey, dwIndex, name, &len, nullptr, nullptr, nullptr, nullptr) == ERROR_SUCCESS)
+    {
+        strName = name;
+        return true;
+    }
+    else
+        return false;
+}
+
 inline HWND GetMDIClient(HWND hWnd)
 {
     return FindWindowEx(hWnd, NULL, TEXT("MDICLIENT"), nullptr);
@@ -159,4 +172,33 @@ inline HWND MyGetActiveWnd(HWND hWnd)
     if (hActive != NULL && IsMDIChild(hWnd))
         hActive = GetMDIActive(GetParent(hWnd));
     return hActive;
+}
+
+inline bool FindMenuPos(HMENU hBaseMenu, UINT myID, HMENU* pMenu, int* mpos)
+{
+    if (hBaseMenu == NULL)
+    {
+        *pMenu = NULL;
+        *mpos = -1;
+        return true;
+    }
+
+    for (int myPos = 0; myPos < GetMenuItemCount(hBaseMenu); ++myPos)
+    {
+        if (GetMenuItemID(hBaseMenu, myPos) == myID)
+        {
+            *pMenu = hBaseMenu;
+            *mpos = myPos;
+            return true;
+        }
+
+        HMENU hNewMenu = GetSubMenu(hBaseMenu, myPos);
+        if (hNewMenu != NULL)
+        {
+            if (FindMenuPos(hNewMenu, myID, pMenu, mpos))
+                return true;
+        }
+    }
+
+    return false;
 }

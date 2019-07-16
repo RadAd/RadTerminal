@@ -68,7 +68,7 @@ void ShowError(HWND hWnd, LPCTSTR msg, HRESULT hr)
 HWND CreateRadTerminalFrame(HINSTANCE hInstance);
 LRESULT CALLBACK RadTerminalWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
-HWND ActionNewWindow(HWND hWnd, bool bParseCmdLine);
+HWND ActionNewWindow(HWND hWnd, bool bParseCmdLine, const std::tstring& profile);
 
 ATOM RegisterRadTerminal(HINSTANCE hInstance)
 {
@@ -154,9 +154,10 @@ void ParseCommandLine(RadTerminalCreate& rtc)
     }
 }
 
-RadTerminalCreate GetDefaultTerminalCreate(bool bParseCmdLine)
+RadTerminalCreate GetTerminalCreate(bool bParseCmdLine, std::tstring profile)
 {
-    std::tstring profile = RegGetString(HKEY_CURRENT_USER, _T("Software\\RadSoft\\" PROJ_CODE), _T("Profile"), _T("Cmd"));
+    if (profile.empty())
+        profile = RegGetString(HKEY_CURRENT_USER, _T("Software\\RadSoft\\" PROJ_CODE), _T("Profile"), _T("Cmd"));
 
     RadTerminalCreate rtc = {};
     rtc.iFontHeight = 16;
@@ -194,7 +195,7 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE, PTSTR pCmdLine, int nCmdSho
         hWndMDIClient = GetMDIClient(hWnd);
         hAccel = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDR_ACCELERATOR1));
 
-        HWND hChildWnd = ActionNewWindow(hWnd, true);
+        HWND hChildWnd = ActionNewWindow(hWnd, true, TEXT(""));
 
         if (true && hChildWnd != NULL)
         {
@@ -208,7 +209,7 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE, PTSTR pCmdLine, int nCmdSho
     }
     else
     {
-        RadTerminalCreate rtc = GetDefaultTerminalCreate(true);
+        RadTerminalCreate rtc = GetTerminalCreate(true, TEXT(""));
 
         hWnd = CreateWindowEx(
             WS_EX_ACCEPTFILES,
@@ -683,14 +684,14 @@ int ActionScrollbackDown(HWND hWnd)
     return 0;
 }
 
-HWND ActionNewWindow(HWND hWnd, bool bParseCmdLine)
+HWND ActionNewWindow(HWND hWnd, bool bParseCmdLine, const std::tstring& profile)
 {
     const HINSTANCE hInstance = GetWindowInstance(hWnd);
     const HWND hWndMDIClient = GetMDIClient(hWnd);
     BOOL bMaximized = FALSE;
     GetMDIActive(hWndMDIClient, &bMaximized);
 
-    const RadTerminalCreate rtc = GetDefaultTerminalCreate(bParseCmdLine);
+    const RadTerminalCreate rtc = GetTerminalCreate(bParseCmdLine, profile);
 
     HWND hChildWnd = CreateMDIWindow(
         MAKEINTATOM(GetRadTerminalAtom(hInstance)),
