@@ -144,6 +144,8 @@ void RadTerminalFrameOnCommand(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify)
     case ID_WINDOW_TILEHORIZONTALLY:  TileWindows(hWndMDIClient, MDITILE_HORIZONTAL, nullptr, 0, nullptr);  break;
     case ID_WINDOW_TILEVERTICALLY:  TileWindows(hWndMDIClient, MDITILE_VERTICAL, nullptr, 0, nullptr);  break;
 
+    case ID_EDIT_COPY: case ID_EDIT_PASTE:
+    case ID_VIEW_SCROLL_UP: case ID_VIEW_SCROLL_DOWN:
     case ID_FILE_CLOSE: FORWARD_WM_COMMAND(GetMDIActive(hWndMDIClient), id, hWndCtl, codeNotify, SendMessage);  break;
 
     default:    FORWARD_WM_COMMAND(hWnd, id, hWndCtl, codeNotify, MyDefFrameWindowProc); break;

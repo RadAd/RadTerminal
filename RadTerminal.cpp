@@ -183,7 +183,7 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE, PTSTR pCmdLine, int nCmdSho
 
     HWND hWnd = NULL;
     HWND hWndMDIClient = NULL;
-    HACCEL hAccel = NULL;
+    HACCEL hAccel1 = NULL;
     bool bMDI = RegGetDWORD(HKEY_CURRENT_USER, REG_BASE, TEXT("MDI"), TRUE) > 0;
 
     CHECK(GetRadTerminalAtom(hInstance), EXIT_FAILURE);
@@ -194,7 +194,7 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE, PTSTR pCmdLine, int nCmdSho
         CHECK(hWnd, EXIT_FAILURE);
 
         hWndMDIClient = GetMDIClient(hWnd);
-        hAccel = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDR_ACCELERATOR1));
+        hAccel1 = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDR_ACCELERATOR1));
 
         HWND hChildWnd = ActionNewWindow(hWnd, true, TEXT(""));
 
@@ -235,11 +235,14 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE, PTSTR pCmdLine, int nCmdSho
 
     ShowWindow(hWnd, nCmdShow);
 
+    HACCEL hAccel2 = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDR_ACCELERATOR2));
+
     MSG msg = {};
     while (GetMessage(&msg, (HWND) NULL, 0, 0))
     {
         if (!TranslateMDISysAccel(hWndMDIClient, &msg) &&
-            !TranslateAccelerator(hWnd, hAccel, &msg))
+            !TranslateAccelerator(hWnd, hAccel1, &msg) &&
+            !TranslateAccelerator(hWnd, hAccel2, &msg))
         {
             TranslateMessage(&msg);
             DispatchMessage(&msg);
@@ -1046,10 +1049,6 @@ void RadTerminalWindowOnKeyDown(HWND hWnd, UINT vk, BOOL fDown, int cRepeat, UIN
     {
     case VK_ESCAPE: bPassOn = ActionClearSelection(hWnd) < 0; break;
     case VK_RETURN: bPassOn = ActionCopyToClipboard(hWnd) < 0; break;
-    case 'C': if (KeyState[VK_CONTROL] & 0x80) bPassOn = ActionCopyToClipboard(hWnd) < 0; break;
-    case 'V': if (KeyState[VK_CONTROL] & 0x80) bPassOn = ActionPasteFromClipboard(hWnd) < 0; break;
-    case VK_UP: if (KeyState[VK_CONTROL] & 0x80) bPassOn = ActionScrollbackUp(hWnd) < 0; break;
-    case VK_DOWN: if (KeyState[VK_CONTROL] & 0x80) bPassOn = ActionScrollbackDown(hWnd) < 0; break;
     }
 
     if (bPassOn)
@@ -1253,6 +1252,10 @@ void RadTerminalWindowOnCommand(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify
 {
     switch (id)
     {
+    case ID_EDIT_COPY: ActionCopyToClipboard(hWnd);  break;
+    case ID_EDIT_PASTE: ActionPasteFromClipboard(hWnd);  break;
+    case ID_VIEW_SCROLL_UP: ActionScrollbackUp(hWnd); break;
+    case ID_VIEW_SCROLL_DOWN: ActionScrollbackDown(hWnd); break;
     case ID_FILE_CLOSE: PostMessage(hWnd, WM_CLOSE, 0, 0);  break;
     default: FORWARD_WM_COMMAND(hWnd, id, hWndCtl, codeNotify, MyDefWindowProc); break;
     }
