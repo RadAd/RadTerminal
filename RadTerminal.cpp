@@ -1029,9 +1029,11 @@ void RadTerminalWindowSendKey(HWND hWnd, UINT vk, UINT scan, bool extended)
     //case VK_: keysym = XKB_KEY_R15; break;
     }
 
-    tsm_screen_selection_reset(data->screen);
     if (vk != VK_SHIFT && vk != VK_CONTROL && vk != VK_MENU)
+    {
+        tsm_screen_selection_reset(data->screen);
         tsm_screen_sb_reset(data->screen);
+    }
     if (keysym != XKB_KEY_NoSymbol)
         tsm_vte_handle_keyboard(data->vte, keysym, ascii, mods, unicode);
     InvalidateRect(hWnd, nullptr, TRUE);
@@ -1041,14 +1043,12 @@ void RadTerminalWindowOnKeyDown(HWND hWnd, UINT vk, BOOL fDown, int cRepeat, UIN
 {
     FORWARD_WM_KEYDOWN(hWnd, vk, cRepeat, flags, MyDefWindowProc);
 
-    BYTE KeyState[256];
-    GetKeyboardState(KeyState);
-
     bool bPassOn = true;
     switch (vk)
     {
     case VK_ESCAPE: bPassOn = ActionClearSelection(hWnd) < 0; break;
     case VK_RETURN: bPassOn = ActionCopyToClipboard(hWnd) < 0; break;
+    case 'C': if (GetKeyState(VK_CONTROL) & 0x80) bPassOn = ActionCopyToClipboard(hWnd) < 0; break;
     }
 
     if (bPassOn)
@@ -1252,7 +1252,6 @@ void RadTerminalWindowOnCommand(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify
 {
     switch (id)
     {
-    case ID_EDIT_COPY: ActionCopyToClipboard(hWnd);  break;
     case ID_EDIT_PASTE: ActionPasteFromClipboard(hWnd);  break;
     case ID_VIEW_SCROLL_UP: ActionScrollbackUp(hWnd); break;
     case ID_VIEW_SCROLL_DOWN: ActionScrollbackDown(hWnd); break;
