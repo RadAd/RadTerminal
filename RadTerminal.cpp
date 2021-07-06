@@ -163,11 +163,12 @@ RadTerminalCreate GetTerminalCreate(bool bParseCmdLine, std::tstring profile)
     RadTerminalCreate rtc = {};
     rtc.iFontHeight = 16;
     rtc.strFontFace = _T("Consolas");
+    //rtc.strFontFace = _T("Cascadia Code");
     //rtc.strScheme = _T("solarized");
     rtc.szCon = { 80, 25 };
     rtc.sb = 1000;
-    //rtc.strCmd = _T("%COMSPEC%");
-    //rtc.strCmd = _T("cmd");
+    //rtc.strCommand = _T("%COMSPEC%");
+    rtc.strCommand = _T("cmd");
 
     LoadRegistry(rtc, _T("Default"));
     LoadRegistry(rtc, profile.c_str());
@@ -180,6 +181,8 @@ RadTerminalCreate GetTerminalCreate(bool bParseCmdLine, std::tstring profile)
 int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE, PTSTR pCmdLine, int nCmdShow)
 {
     InitDarkMode();
+    //SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_SYSTEM_AWARE);
+    //SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED);
 
     HWND hWnd = NULL;
     HWND hWndMDIClient = NULL;

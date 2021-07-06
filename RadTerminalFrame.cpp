@@ -70,9 +70,8 @@ BOOL RadTerminalFrameOnCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct)
         if (RegOpenKey(HKEY_CURRENT_USER, REG_BASE TEXT("\\Profiles"), &hMainKey) == ERROR_SUCCESS)
         {
             const std::tstring strDefault = RegGetString(HKEY_CURRENT_USER, REG_BASE, TEXT("Profile"), TEXT("Cmd"));
-            DWORD i = 0;
             std::tstring strName;
-            for (int i = 0; RegEnumKeyEx(hMainKey, i, strName); ++i)
+            for (DWORD i = 0; RegEnumKeyEx(hMainKey, i, strName); ++i)
             {
                 data->profiles.push_back(strName);
                 if (strName != TEXT("Default"))
@@ -90,6 +89,22 @@ BOOL RadTerminalFrameOnCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct)
             }
             DeleteMenu(hMenu, ID_NEW_PLACEHOLDER, MF_BYCOMMAND);
             RegCloseKey(hMainKey);
+        }
+
+        if (data->profiles.empty())
+        {
+            std::tstring strName = TEXT("Cmd");
+
+            data->profiles.push_back(strName);
+            MENUITEMINFO mii = {};
+            mii.cbSize = sizeof(mii);
+            mii.fMask = MIIM_ID | MIIM_STRING | MIIM_STATE;
+            mii.fType = MFT_STRING;
+            mii.fState |= MFS_DEFAULT;
+            mii.wID = ID_NEW_PROFILE_1;
+            mii.dwTypeData = (LPTSTR) strName.c_str();
+            InsertMenuItem(hMenu, ID_NEW_PLACEHOLDER, FALSE, &mii);
+            DeleteMenu(hMenu, ID_NEW_PLACEHOLDER, MF_BYCOMMAND);
         }
     }
 
