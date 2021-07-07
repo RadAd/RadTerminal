@@ -136,9 +136,10 @@ void RadTerminalFrameOnSizing(HWND hWnd, UINT edge, LPRECT prRect)
     HWND hActive = GetMDIActive(hWndMDIClient, &bMaximized);
     if (hActive != NULL && bMaximized)
     {
+        const UINT dpi = GetDpiForWindow(hWnd);
         FORWARD_WM_SIZING(hActive, edge, prRect, SendMessage);
-        UnadjustWindowRectEx(prRect, GetWindowStyle(hActive), GetMenu(hActive) != NULL, GetWindowExStyle(hActive));
-        AdjustWindowRectEx(prRect, GetWindowStyle(hWnd), GetMenu(hWnd) != NULL, GetWindowExStyle(hWnd));
+        UnadjustWindowRectExForDpi(prRect, GetWindowStyle(hActive), GetMenu(hActive) != NULL, GetWindowExStyle(hActive), dpi);
+        AdjustWindowRectExForDpi(prRect, GetWindowStyle(hWnd), GetMenu(hWnd) != NULL, GetWindowExStyle(hWnd), dpi);
     }
 }
 

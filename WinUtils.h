@@ -49,6 +49,25 @@ inline BOOL UnadjustWindowRectEx(
     return fRc;
 }
 
+inline BOOL UnadjustWindowRectExForDpi(
+    LPRECT prc,
+    DWORD dwStyle,
+    BOOL fMenu,
+    DWORD dwExStyle,
+    UINT dpi)
+{
+    RECT rc;
+    SetRectEmpty(&rc);
+    BOOL fRc = AdjustWindowRectExForDpi(&rc, dwStyle, fMenu, dwExStyle, dpi);
+    if (fRc) {
+        prc->left -= rc.left;
+        prc->top -= rc.top;
+        prc->right -= rc.right;
+        prc->bottom -= rc.bottom;
+    }
+    return fRc;
+}
+
 inline RECT Rect(POINT p1, POINT p2)
 {
     return { p1.x, p1.y, p2.x, p2.y };
@@ -63,7 +82,7 @@ inline HFONT CreateFont(LPCTSTR pFontFace, int iFontHeight, int cWeight, BOOL bI
 {
     return CreateFont(iFontHeight, 0, 0, 0, cWeight, bItalic, bUnderline, FALSE, ANSI_CHARSET,
         OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
-        DEFAULT_PITCH | FF_DONTCARE, pFontFace);
+        FIXED_PITCH | FF_DONTCARE, pFontFace);
 }
 
 inline std::string RegGetString(HKEY hKey, LPCSTR sValue, const std::string& strDef)

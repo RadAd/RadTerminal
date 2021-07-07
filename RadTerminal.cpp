@@ -78,7 +78,7 @@ ATOM RegisterRadTerminal(HINSTANCE hInstance)
     wc.lpfnWndProc = RadTerminalWindowProc;
     wc.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_ICON1));
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    //wc.hbrBackground = GetSysColorBrush(COLOR_WINDOW);
+    wc.hbrBackground = GetSysColorBrush(COLOR_WINDOW);
     wc.hInstance = hInstance;
     wc.lpszClassName = PROJ_CODE;
 
@@ -162,6 +162,7 @@ RadTerminalCreate GetTerminalCreate(bool bParseCmdLine, std::tstring profile)
 
     RadTerminalCreate rtc = {};
     rtc.iFontHeight = 16;
+    //rtc.strFontFace = _T("Courier New");
     rtc.strFontFace = _T("Consolas");
     //rtc.strFontFace = _T("Cascadia Code");
     //rtc.strScheme = _T("solarized");
@@ -181,8 +182,7 @@ RadTerminalCreate GetTerminalCreate(bool bParseCmdLine, std::tstring profile)
 int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE, PTSTR pCmdLine, int nCmdShow)
 {
     InitDarkMode();
-    //SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_SYSTEM_AWARE);
-    //SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED);
+    SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
     HWND hWnd = NULL;
     HWND hWndMDIClient = NULL;
@@ -203,10 +203,12 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE, PTSTR pCmdLine, int nCmdSho
 
         if (true && hChildWnd != NULL)
         {
+            const UINT dpi = GetDpiForWindow(hWnd);
+
             RECT r = {};
             CHECK(GetWindowRect(hChildWnd, &r), EXIT_FAILURE);
-            CHECK(UnadjustWindowRectEx(&r, GetWindowStyle(hChildWnd), GetMenu(hChildWnd) != NULL, GetWindowExStyle(hChildWnd)), EXIT_FAILURE);
-            CHECK(AdjustWindowRectEx(&r, GetWindowStyle(hWnd), GetMenu(hWnd) != NULL, GetWindowExStyle(hWnd)), EXIT_FAILURE);
+            CHECK(UnadjustWindowRectExForDpi(&r, GetWindowStyle(hChildWnd), GetMenu(hChildWnd) != NULL, GetWindowExStyle(hChildWnd), dpi), EXIT_FAILURE);
+            CHECK(AdjustWindowRectExForDpi(&r, GetWindowStyle(hWnd), GetMenu(hWnd) != NULL, GetWindowExStyle(hWnd), dpi), EXIT_FAILURE);
             CHECK(SetWindowPos(hWnd, 0, r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER), EXIT_FAILURE);
             ShowWindow(hChildWnd, SW_MAXIMIZE);
         }
@@ -331,6 +333,8 @@ void tsm_log(void *data,
 
 struct tsm_screen_draw_info
 {
+    int iFontHeight;
+    std::tstring strFontFace;
     HFONT hFonts[2][2][2]; // bold, italic, underline
     TEXTMETRIC tm;
 };
@@ -730,6 +734,25 @@ inline LRESULT MyDefWindowProc(_In_ HWND hWnd, _In_ UINT Msg, _In_ WPARAM wParam
         return DefWindowProc(hWnd, Msg, wParam, lParam);
 }
 
+BOOL CreateFonts(HWND hWnd, tsm_screen_draw_info* const di, const UINT dpi)
+{
+    for (int b = 0; b < 2; ++b)
+        for (int i = 0; i < 2; ++i)
+            for (int u = 0; u < 2; ++u)
+            {
+                CHECK(di->hFonts[b][i][u] == NULL || DeleteObject(di->hFonts[b][i][u]), FALSE);
+                CHECK(di->hFonts[b][i][u] = CreateFont(di->strFontFace.c_str(), MulDiv(di->iFontHeight, dpi, USER_DEFAULT_SCREEN_DPI), b == 0 ? FW_NORMAL : FW_BOLD, i, u), FALSE);
+            }
+
+    HDC hdc = GetDC(hWnd);
+    SelectFont(hdc, di->hFonts[0][0][0]);
+    GetTextMetrics(hdc, &di->tm);
+    VERIFY(!(di->tm.tmPitchAndFamily & TMPF_FIXED_PITCH));
+    ReleaseDC(hWnd, hdc);
+
+    return TRUE;
+}
+
 BOOL RadTerminalWindowOnCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct)
 {
     FORWARD_WM_CREATE(hWnd, lpCreateStruct, MyDefWindowProc);
@@ -771,23 +794,18 @@ BOOL RadTerminalWindowOnCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct)
 #endif
     }
 
-    for (int b = 0; b < 2; ++b)
-        for (int i = 0; i < 2; ++i)
-            for (int u = 0; u < 2; ++u)
-                CHECK(data->draw_info.hFonts[b][i][u] = CreateFont(rtc->strFontFace.c_str(), rtc->iFontHeight, b == 0 ? FW_NORMAL : FW_BOLD, i, u), FALSE);
+    const UINT dpi = GetDpiForWindow(hWnd);
 
-    HDC hdc = GetDC(hWnd);
-    SelectFont(hdc, data->draw_info.hFonts[0][0][0]);
-    GetTextMetrics(hdc, &data->draw_info.tm);
-    VERIFY(!(data->draw_info.tm.tmPitchAndFamily & TMPF_FIXED_PITCH));
-    ReleaseDC(hWnd, hdc);
+    data->draw_info.iFontHeight = rtc->iFontHeight;
+    data->draw_info.strFontFace = rtc->strFontFace;
+    CreateFonts(hWnd, &data->draw_info, dpi);
 
     RECT r = Rect({ 0, 0 }, GetScreenPos(&data->draw_info, rtc->szCon));
     const DWORD style = GetWindowStyle(hWnd);
     const DWORD exstyle = GetWindowExStyle(hWnd);
     if (style & WS_VSCROLL)
-        r.right += GetSystemMetrics(SM_CXVSCROLL);
-    CHECK(AdjustWindowRectEx(&r, style, GetMenu(hWnd) != NULL, exstyle), FALSE);
+        r.right += GetSystemMetricsForDpi(SM_CXVSCROLL, dpi);
+    CHECK(AdjustWindowRectExForDpi(&r, style, GetMenu(hWnd) != NULL, exstyle, dpi), FALSE);
     CHECK(SetWindowPos(hWnd, 0, r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER), FALSE);
 
     HICON hIconLarge = NULL, hIconSmall = NULL;
@@ -831,12 +849,16 @@ void RadTerminalWindowOnPaint(HWND hWnd)
     PAINTSTRUCT ps;
     HDC hdc = BeginPaint(hWnd, &ps);
 
+    HDC hmemdc = CreateCompatibleDC(hdc);
+    HBITMAP hbitmap = CreateCompatibleBitmap(hdc, ps.rcPaint.right - ps.rcPaint.left, ps.rcPaint.bottom - ps.rcPaint.top);
+    HBITMAP hbitmapold = SelectBitmap(hmemdc, hbitmap);
+
     HBRUSH hBrush = (HBRUSH) GetClassLongPtr(hWnd, GCLP_HBRBACKGROUND);
     if (hBrush != NULL)
-        FillRect(hdc, &ps.rcPaint, hBrush);
+        FillRect(hmemdc, &ps.rcPaint, hBrush);
 
     tsm_screen_draw_data draw = {};
-    draw.hdc = hdc;
+    draw.hdc = hmemdc;
     draw.info = &data->draw_info;
     draw.pos.y = -1;
     draw.cur_pos = { (SHORT) tsm_screen_get_cursor_x(data->screen), (SHORT) (tsm_screen_get_cursor_y(data->screen) + tsm_screen_sb_depth(data->screen)) };
@@ -846,9 +868,19 @@ void RadTerminalWindowOnPaint(HWND hWnd)
 
     HWND hActive = MyGetActiveWnd(hWnd);
     if (hActive == hWnd)
-        DrawCursor(hdc, data);
+        DrawCursor(hmemdc, data);
+
+    BitBlt(hdc, ps.rcPaint.left, ps.rcPaint.top, ps.rcPaint.right - ps.rcPaint.left, ps.rcPaint.bottom - ps.rcPaint.top, hmemdc, 0, 0, SRCCOPY);
+    SelectBitmap(hmemdc, hbitmapold);
+    DeleteObject(hbitmap);
+    DeleteDC(hmemdc);
 
     EndPaint(hWnd, &ps);
+}
+
+BOOL RadTerminalWindowOnEraseBkgnd(HWND hwnd, HDC hdc)
+{
+    return FALSE;
 }
 
 void RadTerminalWindowSendKey(HWND hWnd, UINT vk, UINT scan, bool extended)
@@ -1153,14 +1185,16 @@ void RadTerminalWindowOnSize(HWND hWnd, UINT state, int cx, int cy)
 
 void RadTerminalWindowOnSizing(HWND hWnd, UINT edge, LPRECT prRect)
 {
+    const UINT dpi = GetDpiForWindow(hWnd);
+
     FORWARD_WM_SIZING(hWnd, edge, prRect, MyDefWindowProc);
     const RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
     const DWORD style = GetWindowStyle(hWnd);
     const DWORD exstyle = GetWindowExStyle(hWnd);
     const BOOL fMenu = GetMenu(hWnd) != NULL;
-    CHECK_ONLY(UnadjustWindowRectEx(prRect, style, fMenu, exstyle));
+    CHECK_ONLY(UnadjustWindowRectExForDpi(prRect, style, fMenu, exstyle, dpi));
     if (style & WS_VSCROLL)
-        prRect->right -= GetSystemMetrics(SM_CXVSCROLL);
+        prRect->right -= GetSystemMetricsForDpi(SM_CXVSCROLL, dpi);
     SIZE sz = GetCellSize(&data->draw_info);
     COORD size = { (SHORT) ((prRect->right - prRect->left) / sz.cx), (SHORT) ((prRect->bottom - prRect->top) / sz.cy) };
 
@@ -1187,8 +1221,8 @@ void RadTerminalWindowOnSizing(HWND hWnd, UINT edge, LPRECT prRect)
     }
 
     if (style & WS_VSCROLL)
-        prRect->right += GetSystemMetrics(SM_CXVSCROLL);
-    CHECK_ONLY(AdjustWindowRectEx(prRect, style, fMenu, exstyle));
+        prRect->right += GetSystemMetricsForDpi(SM_CXVSCROLL, dpi);
+    CHECK_ONLY(AdjustWindowRectExForDpi(prRect, style, fMenu, exstyle, dpi));
     //prRect->right += 100;
 }
 
@@ -1294,9 +1328,31 @@ LRESULT CALLBACK RadTerminalWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
     //return MyDefWindowProc(hWnd, uMsg, wParam, lParam);
     switch (uMsg)
     {
+    case WM_NCCREATE:
+        EnableNonClientDpiScaling(hWnd);
+        return MyDefWindowProc(hWnd, uMsg, wParam, lParam);
+
+    case WM_DPICHANGED:
+    {
+        RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
+        CreateFonts(hWnd, &data->draw_info, HIWORD(wParam));
+
+        RECT* const prcNewWindow = (RECT*) lParam;
+        SetWindowPos(hWnd,
+            NULL,
+            prcNewWindow->left,
+            prcNewWindow->top,
+            prcNewWindow->right - prcNewWindow->left,
+            prcNewWindow->bottom - prcNewWindow->top,
+            SWP_NOZORDER | SWP_NOACTIVATE);
+
+        return MyDefWindowProc(hWnd, uMsg, wParam, lParam);
+    }
+
         HANDLE_MSG(hWnd, WM_CREATE, RadTerminalWindowOnCreate);
         HANDLE_MSG(hWnd, WM_DESTROY, RadTerminalWindowOnDestroy);
         HANDLE_MSG(hWnd, WM_PAINT, RadTerminalWindowOnPaint);
+        HANDLE_MSG(hWnd, WM_ERASEBKGND, RadTerminalWindowOnEraseBkgnd);
         HANDLE_MSG(hWnd, WM_KEYDOWN, RadTerminalWindowOnKeyDown);
         HANDLE_MSG(hWnd, WM_SYSKEYDOWN, RadTerminalWindowOnSysKeyDown);
         HANDLE_MSG(hWnd, WM_MOUSEACTIVATE, RadTerminalWindowOnMouseActivate);
