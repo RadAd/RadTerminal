@@ -44,6 +44,18 @@ HWND CreateRadTerminalFrame(HINSTANCE hInstance)
 
 inline LRESULT MyDefFrameWindowProc(_In_ HWND hWnd, _In_ UINT Msg, _In_ WPARAM wParam, _In_ LPARAM lParam)
 {
+    if (Msg == WM_DPICHANGED)
+    {
+        RECT* const prcNewWindow = (RECT*) lParam;
+        SetWindowPos(hWnd,
+            NULL,
+            prcNewWindow->left,
+            prcNewWindow->top,
+            prcNewWindow->right - prcNewWindow->left,
+            prcNewWindow->bottom - prcNewWindow->top,
+            SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+
     return DefFrameProc(hWnd, GetMDIClient(hWnd), Msg, wParam, lParam);
 }
 

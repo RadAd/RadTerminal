@@ -1328,10 +1328,6 @@ LRESULT CALLBACK RadTerminalWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
     //return MyDefWindowProc(hWnd, uMsg, wParam, lParam);
     switch (uMsg)
     {
-    case WM_NCCREATE:
-        EnableNonClientDpiScaling(hWnd);
-        return MyDefWindowProc(hWnd, uMsg, wParam, lParam);
-
     case WM_DPICHANGED:
     {
         RadTerminalData* const data = (RadTerminalData*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
