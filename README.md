@@ -12,6 +12,6 @@ Simple Terminal Emulator for Windows using [libtsm](https://github.com/RadAd/lib
 
 Build
 =======
-```
+```bat
 msbuild RadTerminal.vcxproj -p:Configuration=Release -p:Platform=x64
 ```
