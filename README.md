@@ -1,5 +1,5 @@
 <!-- ![Icon](RadTerminal.ico) RadTerminal -->
-<img src="RadTerminal.ico" width=32/> RadTerminal
+<img src="RadTerminal.ico" width=32/> [RadTerminal](https://github.com/RadAd/RadTerminal)
 ==========
 
 Simple Terminal Emulator for Windows using [libtsm](https://github.com/RadAd/libtsm). Implemented using a [Pseudo Console](https://docs.microsoft.com/en-us/windows/console/pseudoconsoles).
