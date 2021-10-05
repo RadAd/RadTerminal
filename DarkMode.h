@@ -1,4 +1,6 @@
 // https://github.com/ysc3839/win32-darkmode/blob/master/win32-darkmode/DarkMode.h
+// Copyright (c) 2019 Richard Yu
+// License MIT
 
 #pragma once
 #include <Windows.h>
