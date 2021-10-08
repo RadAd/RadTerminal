@@ -16,3 +16,7 @@ Build
 ```bat
 msbuild RadTerminal.vcxproj -p:Configuration=Release -p:Platform=x64
 ```
+
+License
+=======
+[MIT License](LICENSE.txt)
