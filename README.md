@@ -11,10 +11,20 @@ Simple Terminal Emulator for Windows using [libtsm](https://github.com/RadAd/lib
 
 ![Screenshot](docs/Screenshot.png)
 
+Dependencies
+=======
+[libtsm](https://github.com/RadAd/libtsm) - Terminal-emulator State Machine
+
 Build
 =======
 ```bat
 msbuild RadTerminal.vcxproj -p:Configuration=Release -p:Platform=x64
+```
+
+Execute
+=======
+```bat
+msbuild RadTerminal.vcxproj -p:Configuration=Release -p:Platform=x64 /t:Build,Run
 ```
 
 License

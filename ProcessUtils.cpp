@@ -73,6 +73,8 @@ namespace {
                 Clear(&spd);
                 return spd;
             }
+
+            si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
         }
         else
         {
