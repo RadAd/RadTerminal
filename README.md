@@ -27,7 +27,3 @@ Execute
 ```bat
 msbuild RadTerminal.vcxproj -p:Configuration=Release -p:Platform=x64 /t:Build,Run
 ```
-
-License
-=======
-[MIT License](LICENSE.txt)
